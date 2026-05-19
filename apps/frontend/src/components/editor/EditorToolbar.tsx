@@ -1,14 +1,21 @@
 import type { FC } from "react";
-import { useEffect, useReducer } from "react";
-import { Grid3x3, ZoomIn, ZoomOut } from "lucide-react";
+import { useEffect, useReducer, useState } from "react";
+import { Grid3x3, History, ZoomIn, ZoomOut } from "lucide-react";
 import { Link } from "react-router-dom";
 
 import { BrandLogo } from "@/components/layout/BrandLogo";
+import { focusRingOnLightClass } from "@/shared/lib/a11y";
 import { useOptionalEditorWorkspace } from "./editor-workspace-context";
+import { useProjectVersionHistory } from "./useProjectVersionHistory";
+import { VersionHistoryPanel } from "./VersionHistoryPanel";
+
+const iconBtnClass = `rounded-lg p-2 text-violet-800 transition hover:bg-violet-100 ${focusRingOnLightClass}`;
 
 export const EditorToolbar: FC = () => {
   const workspace = useOptionalEditorWorkspace();
   const [, bump] = useReducer((n: number) => n + 1, 0);
+  const [versionsOpen, setVersionsOpen] = useState(false);
+  const { versions, projectId } = useProjectVersionHistory();
 
   useEffect(() => {
     if (!workspace) return;
@@ -31,7 +38,7 @@ export const EditorToolbar: FC = () => {
     workspace;
 
   return (
-    <header className="border-b border-violet-200/60 bg-white/90 shadow-sm backdrop-blur-md">
+    <header className="border-b border-violet-200/60 bg-white/90 shadow-sm backdrop-blur-md" role="banner">
       <div className="flex items-center gap-4 overflow-x-auto px-4 py-2.5">
         <div className="hidden shrink-0 sm:block">
           <BrandLogo />
@@ -42,53 +49,79 @@ export const EditorToolbar: FC = () => {
           </p>
         ) : null}
 
+        <button
+          type="button"
+          disabled={!projectId}
+          onClick={() => setVersionsOpen(true)}
+          className={
+            `relative flex items-center gap-2 rounded-lg border border-violet-200 bg-violet-50 px-3 py-2 text-sm font-semibold text-violet-900 transition hover:bg-violet-100 disabled:cursor-not-allowed disabled:opacity-50 ${focusRingOnLightClass}`
+          }
+          aria-label="Open version history"
+          title={projectId ? "Project snapshots and restore" : "Save the project first"}
+        >
+          <History size={18} aria-hidden />
+          <span className="hidden sm:inline">Versions</span>
+          {versions.length > 0 ? (
+            <span className="rounded-full bg-violet-600 px-1.5 py-0.5 text-[10px] font-bold text-white">
+              {versions.length}
+            </span>
+          ) : null}
+        </button>
+
         <div className="ml-auto flex items-center gap-2 border-r border-violet-200/80 pr-4">
           <button
             type="button"
             onClick={zoomOut}
-            className="rounded-lg p-2 text-violet-800 transition hover:bg-violet-100"
+            className={iconBtnClass}
+            aria-label="Zoom out"
             title="Zoom out"
           >
-            <ZoomOut size={18} />
+            <ZoomOut size={18} aria-hidden />
           </button>
           <button
             type="button"
             onClick={zoomReset}
-            className="min-w-14 rounded-lg px-3 py-2 text-sm font-semibold text-violet-900 transition hover:bg-violet-100"
+            className={`min-w-14 rounded-lg px-3 py-2 text-sm font-semibold text-violet-900 transition hover:bg-violet-100 ${focusRingOnLightClass}`}
+            aria-label={`Reset zoom, current ${cameraZoomPercent} percent`}
           >
             {cameraZoomPercent}%
           </button>
           <button
             type="button"
             onClick={zoomIn}
-            className="rounded-lg p-2 text-violet-800 transition hover:bg-violet-100"
+            className={iconBtnClass}
+            aria-label="Zoom in"
             title="Zoom in"
           >
-            <ZoomIn size={18} />
+            <ZoomIn size={18} aria-hidden />
           </button>
         </div>
 
         <button
           type="button"
           onClick={() => setGridEnabled(!gridEnabled)}
+          aria-pressed={gridEnabled}
+          aria-label={gridEnabled ? "Hide grid" : "Show grid"}
           className={
             gridEnabled
-              ? "flex items-center gap-2 rounded-lg bg-violet-100 px-3 py-2 text-violet-800"
-              : "flex items-center gap-2 rounded-lg px-3 py-2 text-violet-800 transition hover:bg-violet-50"
+              ? `flex items-center gap-2 rounded-lg bg-violet-100 px-3 py-2 text-violet-800 ${focusRingOnLightClass}`
+              : `flex items-center gap-2 rounded-lg px-3 py-2 text-violet-800 transition hover:bg-violet-50 ${focusRingOnLightClass}`
           }
           title="Toggle grid"
         >
-          <Grid3x3 size={18} />
+          <Grid3x3 size={18} aria-hidden />
           <span className="text-sm font-medium">Grid</span>
         </button>
 
         <Link
           to="/"
-          className="rounded-full border border-violet-200 px-3 py-1.5 text-xs font-semibold text-violet-700 hover:bg-violet-50"
+          className={`rounded-full border border-violet-200 px-3 py-1.5 text-xs font-semibold text-violet-700 hover:bg-violet-50 ${focusRingOnLightClass}`}
         >
           Home
         </Link>
       </div>
+
+      <VersionHistoryPanel open={versionsOpen} onClose={() => setVersionsOpen(false)} />
     </header>
   );
 };

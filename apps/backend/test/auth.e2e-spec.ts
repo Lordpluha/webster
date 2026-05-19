@@ -13,7 +13,9 @@ import { join } from "node:path";
 import { MailModule } from "../src/infra/mail/mail.module";
 import { OAuthModule } from "../src/infra/oauth/oauth.module";
 import { OAuthService } from "../src/infra/oauth/oauth.service";
+import { JwtService } from "@nestjs/jwt";
 import { AuthModule } from "../src/modules/auth/auth.module";
+import { UsersService } from "../src/modules/users/users.service";
 import { UsersModule } from "../src/modules/users/users.module";
 
 const MONGO_URI =
@@ -22,6 +24,8 @@ const MONGO_URI =
 
 let app: INestApplication;
 let oauthService: OAuthService;
+let usersService: UsersService;
+let jwtService: JwtService;
 
 const GQL = "/graphql";
 
@@ -112,7 +116,23 @@ beforeAll(async () => {
   await app.init();
 
   oauthService = moduleRef.get(OAuthService);
+  usersService = moduleRef.get(UsersService);
+  jwtService = moduleRef.get(JwtService);
 }, 60_000);
+
+async function verifyUserEmail(email: string) {
+  const user = await usersService.findByEmail(email);
+  if (!user) {
+    throw new Error(`User not found for verification: ${email}`);
+  }
+  const token = jwtService.sign(
+    { sub: user.id, type: "email-verification" },
+    { secret: "test-access-secret", expiresIn: "24h" } as any,
+  );
+  const res = await gql(`mutation { verifyEmail(token: "${token}") { message } } }`);
+  expect(res.status).toBe(200);
+  expect(res.body.data.verifyEmail.message).toContain("verified");
+}
 
 afterAll(async () => {
   if (app) {
@@ -144,7 +164,7 @@ describe("Auth E2E", () => {
   let cookies: string[] = [];
 
   describe("register", () => {
-    it("should register a new user and set cookies", async () => {
+    it("should register a new user without setting auth cookies", async () => {
       const res = await gql(`
         mutation {
           register(input: {
@@ -157,12 +177,14 @@ describe("Auth E2E", () => {
       `);
 
       expect(res.status).toBe(200);
-      expect(res.body.data.register.message).toContain("Registration successful");
+      expect(res.body.data.register.message).toContain("verify");
 
-      cookies = extractCookies(res);
-      expect(cookies.length).toBeGreaterThanOrEqual(2);
-      expect(cookies.some((c) => c.startsWith("access_token="))).toBe(true);
-      expect(cookies.some((c) => c.startsWith("refresh_token="))).toBe(true);
+      const setCookies = extractCookies(res);
+      expect(setCookies.some((c) => c.startsWith("access_token="))).toBe(false);
+    });
+
+    it("should verify email before login", async () => {
+      await verifyUserEmail(testUser.email);
     });
 
     it("should reject duplicate email", async () => {
@@ -198,6 +220,32 @@ describe("Auth E2E", () => {
   });
 
   describe("login", () => {
+    it("should reject login before email verification", async () => {
+      const unverifiedEmail = "unverified@test.com";
+      await gql(`
+        mutation {
+          register(input: {
+            email: "${unverifiedEmail}"
+            password: "${testUser.password}"
+            firstName: "Un"
+            lastName: "Verified"
+          }) { message }
+        }
+      `);
+
+      const res = await gql(`
+        mutation {
+          login(input: {
+            email: "${unverifiedEmail}"
+            password: "${testUser.password}"
+          }) { message }
+        }
+      `);
+
+      expect(res.body.errors).toBeDefined();
+      expect(res.body.errors[0].message).toContain("verify");
+    });
+
     it("should login with valid credentials", async () => {
       const res = await gql(`
         mutation {

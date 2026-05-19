@@ -1,13 +1,12 @@
 import { createContext, useContext, type ReactNode } from "react";
 
-import type { CanvasEngine } from "@/shared/lib/canvas-engine";
+import type { CanvasEngine, ProjectExportFormat } from "@/shared/lib/canvas-engine";
 
 export type EditorWorkspaceContextValue = {
   engine: CanvasEngine;
   projectId: string | null;
   projectTitle: string | null;
-  projectWidth: number;
-  projectHeight: number;
+  projectCreatedAt: string | null;
   autosaveLabel: string;
   saveNow: () => Promise<void>;
   /** Replace engine scene from API `Project.content` (after restore, etc.). */
@@ -19,6 +18,7 @@ export type EditorWorkspaceContextValue = {
   cameraZoomPercent: number;
   gridEnabled: boolean;
   setGridEnabled: (next: boolean) => void;
+  exportProject: (format: ProjectExportFormat) => Promise<void>;
 };
 
 const EditorWorkspaceContext = createContext<EditorWorkspaceContextValue | null>(null);

@@ -157,6 +157,43 @@ export const LayersPanel: FC = () => {
     }
   };
 
+  const getGroupMemberIds = (group: GroupEntry): string[] =>
+    group.items.filter((item) => !item.node.data?.hidden).map((item) => item.id);
+
+  const handleGroupClick = (event: React.MouseEvent, group: GroupEntry) => {
+    const memberIds = getGroupMemberIds(group);
+    if (memberIds.length === 0) {
+      return;
+    }
+
+    const memberIndices = memberIds
+      .map((id) => panelOrderIds.indexOf(id))
+      .filter((index) => index >= 0);
+    const anchorIndex = memberIndices.length > 0 ? Math.min(...memberIndices) : -1;
+
+    if (event.shiftKey && lastClickedIndex !== null && anchorIndex >= 0) {
+      const start = Math.min(lastClickedIndex, anchorIndex, ...memberIndices);
+      const end = Math.max(lastClickedIndex, anchorIndex, ...memberIndices);
+      engine.setSelection(panelOrderIds.slice(start, end + 1));
+      setLastClickedIndex(anchorIndex);
+      return;
+    }
+
+    if (event.metaKey || event.ctrlKey) {
+      const allSelected = memberIds.every((id) => selectedIds.includes(id));
+      if (allSelected) {
+        engine.setSelection(selectedIds.filter((id) => !memberIds.includes(id)));
+      } else {
+        engine.setSelection([...new Set([...selectedIds, ...memberIds])]);
+      }
+      setLastClickedIndex(anchorIndex);
+      return;
+    }
+
+    engine.setSelection(memberIds);
+    setLastClickedIndex(anchorIndex);
+  };
+
   const handleLayerClick = (event: React.MouseEvent, layerId: string) => {
     const scene = engine.getSerializableState();
     const node = scene.nodes[layerId];
@@ -340,24 +377,51 @@ export const LayersPanel: FC = () => {
             }
 
             const isCollapsed = collapsedGroups[row.group.id];
+            const groupMemberIds = row.group.items.map((item) => item.id);
+            const isGroupSelected =
+              groupMemberIds.length > 0 && groupMemberIds.every((id) => selectedIds.includes(id));
+            const isGroupPartiallySelected =
+              !isGroupSelected && groupMemberIds.some((id) => selectedIds.includes(id));
+
             return (
               <div key={row.group.id} className="mb-2">
-                <button
-                  type="button"
-                  onClick={() =>
-                    setCollapsedGroups((prev) => ({
-                      ...prev,
-                      [row.group.id]: !prev[row.group.id],
-                    }))
+                <div
+                  className={
+                    "flex w-full items-center gap-1 rounded-md text-xs font-semibold transition " +
+                    (isGroupSelected
+                      ? "bg-blue-100 text-blue-900"
+                      : isGroupPartiallySelected
+                        ? "bg-blue-50 text-blue-800"
+                        : "text-slate-700 hover:bg-slate-100")
                   }
-                  className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100"
                 >
-                  <ChevronDown
-                    size={14}
-                    className={"transition-transform " + (isCollapsed ? "-rotate-90" : "")}
-                  />
-                  {row.group.label}
-                </button>
+                  <button
+                    type="button"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      setCollapsedGroups((prev) => ({
+                        ...prev,
+                        [row.group.id]: !prev[row.group.id],
+                      }));
+                    }}
+                    className="rounded p-1.5 text-slate-600 hover:bg-white/80"
+                    title={isCollapsed ? "Expand group" : "Collapse group"}
+                  >
+                    <ChevronDown
+                      size={14}
+                      className={"transition-transform " + (isCollapsed ? "-rotate-90" : "")}
+                    />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(event) => handleGroupClick(event, row.group)}
+                    className="min-w-0 flex-1 truncate px-1 py-1.5 text-left"
+                    title="Select group"
+                  >
+                    {row.group.label}
+                    <span className="ml-1 font-normal text-slate-500">({row.group.items.length})</span>
+                  </button>
+                </div>
                 {!isCollapsed && row.group.items.map((item) => renderLayerRow(item, true))}
               </div>
             );

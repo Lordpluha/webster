@@ -130,27 +130,31 @@
 
 ## 7. Доступность и качество интерфейса
 
-- [ ] Добавить aria-label для интерактивных кнопок.
-- [ ] Добавить фокус-стили для клавиатурной навигации.
-- [ ] Проверить tab order на основных экранах.
-- [ ] Проверить контрастность элементов управления.
-- [ ] Проверить UI на разрешениях 1280+, 1024, 768.
+- [x] Добавить aria-label для интерактивных кнопок.
+- [x] Добавить фокус-стили для клавиатурной навигации.
+- [x] Проверить tab order на основных экранах.
+- [x] Проверить контрастность элементов управления.
+- [x] Проверить UI на разрешениях 1280+, 1024, 768.
+
+Примечание (§7, 2026-05): глобальные `focus-visible` кольца (`shared/lib/a11y.ts`), skip-link (`SkipToContent`), `aria-label` / `aria-pressed` / `aria-current` в редакторе и app shell, связка `label`↔`input` в `NumberInput`, responsive padding в `AppShell` / `MarketingShell`.
 
 ## 8. Тесты роли
 
-- [ ] Unit-тесты для UI утилит и локального state.
-- [ ] Component-тесты панели инструментов.
-- [ ] Component-тесты панели свойств.
-- [ ] E2E-тесты навигации landing -> login/register.
-- [ ] E2E-тесты auth-сценариев (login/register/refresh/logout).
-- [ ] E2E-тесты verify/reset/magic-link/2FA flow.
-- [ ] E2E-тесты редактора и backend flows (load/save/export/share).
+- [x] Unit-тесты для UI утилит и локального state.
+- [x] Component-тесты панели инструментов.
+- [x] Component-тесты панели свойств.
+- [x] E2E-тесты навигации landing -> login/register.
+- [x] E2E-тесты auth-сценариев (login/register/refresh/logout).
+- [x] E2E-тесты verify/reset/magic-link/2FA flow.
+- [x] E2E-тесты редактора и backend flows (load/save/export/share).
+
+Примечание (§8): Vitest — `auth-fields`, `auth.store`, `scene-from-project-content`, `EditorToolbar`, `PropertiesPanel`. Playwright — `apps/frontend/e2e/*.spec.ts` (GraphQL mock). Команды: `pnpm --filter @webster/frontend test`, `pnpm test:e2e`.
 
 ## 9. Done-критерии роли
 
-- [ ] Есть landing page как точка входа в продукт.
-- [ ] Auth flow (login/register/refresh/logout/verify/reset/magic-link/2FA) стабилен.
-- [ ] Есть отдельная страница редактора и основной UI-скелет.
-- [ ] UI корректно обрабатывает ошибки backend.
-- [ ] Критические пользовательские сценарии покрыты e2e тестами.
-- [ ] Нет дублирования canvas-логики из роли 1 внутри UI-слоя.
+- [x] Есть landing page как точка входа в продукт.
+- [x] Auth flow (login/register/refresh/logout/verify/reset/magic-link/2FA) стабилен.
+- [x] Есть отдельная страница редактора и основной UI-скелет.
+- [x] UI корректно обрабатывает ошибки backend.
+- [x] Критические пользовательские сценарии покрыты e2e тестами.
+- [x] Нет дублирования canvas-логики из роли 1 внутри UI-слоя.

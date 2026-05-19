@@ -14,24 +14,18 @@ import { createEmptySerializableSceneState } from "@/shared/lib/canvas-engine";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { BlockingOverlay } from "@/components/ui/BlockingOverlay";
 import { useToastStore } from "@/shared/stores/toast.store";
+import { useAuthStore } from "@/shared/stores/auth.store";
+import { formatDateTime } from "@/shared/lib/format-datetime";
 
 const DEFAULT_PAGINATION = { page: 1, limit: 12 };
 const EMPTY_SCENE = createEmptySerializableSceneState();
 
-function formatDate(value?: string) {
-  if (!value) return "Unknown";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleDateString();
-}
-
 export function ProjectsPage() {
   const navigate = useNavigate();
+  const user = useAuthStore((state) => state.user);
   const [searchParams, setSearchParams] = useSearchParams();
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [title, setTitle] = useState("");
-  const [width, setWidth] = useState(800);
-  const [height, setHeight] = useState(600);
   const [formError, setFormError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<{ id: string; title: string } | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -39,6 +33,8 @@ export function ProjectsPage() {
 
   const { data, loading, error } = useQuery(PROJECTS_QUERY, {
     variables: { pagination: DEFAULT_PAGINATION },
+    skip: !user,
+    fetchPolicy: "cache-and-network",
   });
   const [createProject, { loading: creating }] = useMutation(CREATE_PROJECT_MUTATION, {
     refetchQueries: [{ query: PROJECTS_QUERY, variables: { pagination: DEFAULT_PAGINATION } }],
@@ -94,8 +90,20 @@ export function ProjectsPage() {
   });
 
   const projects =
-    (data as { projects?: { items?: Array<{ id: string; title: string; updatedAt?: string }> } } | undefined)
-      ?.projects?.items ?? [];
+    (
+      data as
+        | {
+            projects?: {
+              items?: Array<{
+                id: string;
+                title: string;
+                createdAt?: string;
+                updatedAt?: string;
+              }>;
+            };
+          }
+        | undefined
+    )?.projects?.items ?? [];
 
   useEffect(() => {
     if (searchParams.get("new") === "1") {
@@ -108,8 +116,6 @@ export function ProjectsPage() {
 
   const openCreateModal = useCallback(() => {
     setTitle(`Untitled ${new Date().toLocaleDateString()}`);
-    setWidth(800);
-    setHeight(600);
     setFormError(null);
     setCreateModalOpen(true);
   }, []);
@@ -125,14 +131,6 @@ export function ProjectsPage() {
       setFormError("Title is required.");
       return;
     }
-    if (!Number.isFinite(width) || width < 1 || width > 10000) {
-      setFormError("Width must be between 1 and 10000.");
-      return;
-    }
-    if (!Number.isFinite(height) || height < 1 || height > 10000) {
-      setFormError("Height must be between 1 and 10000.");
-      return;
-    }
 
     setFormError(null);
     try {
@@ -140,8 +138,6 @@ export function ProjectsPage() {
         variables: {
           input: {
             title: trimmed,
-            width: Math.floor(width),
-            height: Math.floor(height),
             content: EMPTY_SCENE,
           },
         },
@@ -206,29 +202,22 @@ export function ProjectsPage() {
       ) : null}
 
       {!loading && projects.length === 0 && !error ? (
-        <p className="glass-card rounded-2xl px-6 py-8 text-center text-sm text-violet-100/80">
+        <p className="glass-card mb-4 rounded-2xl px-6 py-8 text-center text-sm text-violet-100/80">
           No projects yet. Create your first board to get started.
         </p>
       ) : null}
 
-      {!loading && projects.length === 0 && !error ? (
-        <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-6 text-sm text-slate-300">
-          No projects yet. Create your first one.
-        </div>
-      ) : null}
-
       <section className="grid gap-4 md:grid-cols-2">
-        {projects.map((project: { id: string; title: string; updatedAt?: string }) => (
-          <article
-            key={project.id}
-            className="rounded-2xl border border-slate-800 bg-slate-900/60 p-5 transition hover:border-slate-600"
-          >
-            <h2 className="text-lg font-semibold">{project.title}</h2>
-            <p className="mt-2 text-sm text-slate-400">Updated {formatDate(project.updatedAt)}</p>
-            <div className="mt-4 flex gap-3">
+        {projects.map((project) => (
+          <article key={project.id} className="glass-card rounded-2xl p-5 transition hover:bg-white/12">
+            <h2 className="text-lg font-semibold text-white">{project.title}</h2>
+            <p className="mt-2 text-sm text-violet-200/70">
+              Created {formatDateTime(project.createdAt)}
+            </p>
+            <div className="mt-4 flex flex-wrap gap-3">
               <Link
                 to={`/editor?projectId=${project.id}`}
-                className="rounded-full bg-emerald-400 px-4 py-2 text-sm font-semibold text-slate-900"
+                className="rounded-full bg-linear-to-r from-violet-500 to-fuchsia-500 px-4 py-2 text-sm font-semibold text-white"
               >
                 Open
               </Link>
@@ -244,22 +233,6 @@ export function ProjectsPage() {
           </article>
         ))}
       </section>
-      <section className="grid gap-4 md:grid-cols-2">
-        {projects.map((project) => (
-          <article key={project.id} className="glass-card rounded-2xl p-5 transition hover:bg-white/12">
-            <h2 className="text-lg font-semibold text-white">{project.title}</h2>
-            <p className="mt-2 text-sm text-violet-200/70">Updated {formatDate(project.updatedAt)}</p>
-            <div className="mt-4 flex gap-3">
-              <Link
-                to={`/editor?projectId=${project.id}`}
-                className="rounded-full bg-linear-to-r from-violet-500 to-fuchsia-500 px-4 py-2 text-sm font-semibold text-white"
-              >
-                Open
-              </Link>
-            </div>
-          </article>
-        ))}
-      </section>
 
       {(creating || deletingId) && (
         <BlockingOverlay label={deletingId ? "Deleting project..." : "Creating project..."} />
@@ -267,7 +240,7 @@ export function ProjectsPage() {
 
       {createModalOpen ? (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
           role="presentation"
           onMouseDown={(e) => {
             if (e.target === e.currentTarget) closeCreateModal();
@@ -283,7 +256,7 @@ export function ProjectsPage() {
             <h2 id="create-project-title" className="text-lg font-semibold text-white">
               New project
             </h2>
-            <p className="mt-1 text-sm text-violet-200/70">Name your board and pick a canvas size.</p>
+            <p className="mt-1 text-sm text-violet-200/70">Name your board and start drawing on an open canvas.</p>
 
             <label className="mt-5 block text-sm font-medium text-violet-100">
               Title
@@ -294,31 +267,6 @@ export function ProjectsPage() {
                 autoFocus
               />
             </label>
-
-            <div className="mt-4 grid grid-cols-2 gap-3">
-              <label className="text-sm font-medium text-violet-100">
-                Width (px)
-                <input
-                  type="number"
-                  min={1}
-                  max={10000}
-                  className="mt-1.5 w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-white outline-none focus:border-cyan-400"
-                  value={width}
-                  onChange={(e) => setWidth(Number(e.target.value))}
-                />
-              </label>
-              <label className="text-sm font-medium text-violet-100">
-                Height (px)
-                <input
-                  type="number"
-                  min={1}
-                  max={10000}
-                  className="mt-1.5 w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-white outline-none focus:border-cyan-400"
-                  value={height}
-                  onChange={(e) => setHeight(Number(e.target.value))}
-                />
-              </label>
-            </div>
 
             {formError ? <p className="mt-3 text-sm text-rose-300">{formError}</p> : null}
 

@@ -11,12 +11,19 @@ export default defineConfig({
     },
   },
   test: {
-    environment: "node",
-    include: ["src/**/*.test.ts"],
+    environment: "jsdom",
+    setupFiles: ["./src/test/setup.ts"],
+    include: ["src/**/*.test.{ts,tsx}"],
     coverage: {
       provider: "v8",
-      include: ["src/shared/lib/canvas-engine/**"],
-      exclude: ["**/*.test.ts", "**/react/**"],
+      include: [
+        "src/shared/lib/canvas-engine/**",
+        "src/shared/lib/editor/**",
+        "src/shared/lib/validation/**",
+        "src/shared/stores/**",
+        "src/components/editor/**",
+      ],
+      exclude: ["**/*.test.ts", "**/*.test.tsx", "**/react/**"],
     },
   },
 });

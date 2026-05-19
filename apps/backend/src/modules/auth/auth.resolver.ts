@@ -33,9 +33,7 @@ export class AuthResolver {
     @Args("input") input: RegisterDto,
     @Context() ctx: GqlContext,
   ) {
-    const tokens = await this.authService.register(input);
-    setAuthCookies(ctx.res, this.authService.configService, tokens.accessToken, tokens.refreshToken, this.authService.refreshDays);
-    return { message: "Registration successful" };
+    return this.authService.register(input);
   }
 
   @Mutation(() => MessageResponse)

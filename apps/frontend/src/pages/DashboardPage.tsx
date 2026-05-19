@@ -24,6 +24,8 @@ export function DashboardPage() {
   const user = useAuthStore((s) => s.user);
   const { data, loading, error } = useQuery(PROJECTS_QUERY, {
     variables: { pagination: { page: 1, limit: 6 } },
+    skip: !user,
+    fetchPolicy: "cache-and-network",
   });
 
   const projects = (data as { projects?: { items?: Array<{ id: string; title: string; updatedAt?: string }> } } | undefined)
@@ -72,7 +74,7 @@ export function DashboardPage() {
           </span>
           <h2 className="mt-4 text-lg font-bold">My templates</h2>
           <p className="mt-2 text-sm text-violet-100/75">
-            Save and reuse canvas layouts — create projects from your templates.
+            Reuse layouts you saved from projects — start new boards in one click.
           </p>
         </Link>
       </div>

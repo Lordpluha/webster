@@ -4,8 +4,15 @@ import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } fro
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 
 import { CanvasEditorLayout, EditorWorkspaceProvider } from "@/components/editor";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { PromptDialog } from "@/components/ui/PromptDialog";
 import { AUTOSAVE_PROJECT_MUTATION, PROJECT_QUERY } from "../graphql/projects.graphql";
 import { sceneStateFromProjectContent } from "@/shared/lib/editor/scene-from-project-content";
+import {
+  applyTextStyleToNode,
+  DEFAULT_TEXT_FONT_SIZE,
+} from "@/shared/lib/canvas-engine/utils/text-style";
+import { useToastStore } from "@/shared/stores/toast.store";
 
 import {
   DEFAULT_LAYER_ID,
@@ -13,16 +20,23 @@ import {
   CanvasRenderer,
   applyMat2DToPoint,
   composeNodeLocalToWorldMatrix,
+  invertMat2D,
   createIdentityTransform,
   createCanvasEngine,
   createEmptySerializableSceneState,
   createStressScene,
   deserializeSceneFromJson,
+  downloadProjectExport,
+  findResizeHandleAtWorldPoint,
   getDefaultNodePivot,
   getNodeWorldBounds,
+  getResizeHandlesWorld,
+  getRotateHandleWorld,
   hitTestNodeAtWorldPoint,
   pickTopMostNodeAtWorldPoint,
   serializeSceneToJson,
+  type Mat2D,
+  type ProjectExportFormat,
   type RenderMode,
   type NodeId,
   type Point,
@@ -107,6 +121,7 @@ type DragState =
       handle: ResizeHandle;
       startWorld: Point;
       startBounds: { x: number; y: number; width: number; height: number };
+      startWorldToLocal: Mat2D;
     }
   | {
       mode: "rotate";
@@ -132,6 +147,10 @@ type EngineDebugState = {
   cameraY: number;
   cameraZoom: number;
 };
+
+type TextPromptState =
+  | { mode: "create"; x: number; y: number }
+  | { mode: "edit"; nodeId: string; defaultValue: string };
 
 export function CanvasEnginePage() {
   const engine = useMemo(() => createCanvasEngine(), []);
@@ -163,6 +182,9 @@ export function CanvasEnginePage() {
   const [autosaveLabel, setAutosaveLabel] = useState<string>("");
   const [editorGridEnabled, setEditorGridEnabled] = useState(false);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [pendingLeavePath, setPendingLeavePath] = useState<string | null>(null);
+  const [textPrompt, setTextPrompt] = useState<TextPromptState | null>(null);
+  const pushToast = useToastStore((state) => state.pushToast);
 
   const [debug, setDebug] = useState<EngineDebugState>(() => {
     const runtime = engine.getRuntimeSnapshot();
@@ -235,19 +257,48 @@ export function CanvasEnginePage() {
     r.setCamera({ x: 0, y: 0, zoom: 1 });
   }, []);
 
-  const projectMeta = (projectData as { project?: { title?: string; width?: number; height?: number } } | null | undefined)
-    ?.project;
+  const projectMeta = (
+    projectData as { project?: { title?: string; createdAt?: string } } | null | undefined
+  )?.project;
   const projectTitle = projectMeta?.title ?? null;
-  const projectWidth = projectMeta?.width ?? 800;
-  const projectHeight = projectMeta?.height ?? 600;
+  const projectCreatedAt = projectMeta?.createdAt ?? null;
+
+  const exportProject = useCallback(
+    async (format: ProjectExportFormat) => {
+      const baseName = projectTitle ?? "project";
+      if (format === "json") {
+        const json = serializeSceneToJson(engine.getSerializableState());
+        const blob = new Blob([json], { type: "application/json;charset=utf-8" });
+        const url = URL.createObjectURL(blob);
+        const anchor = document.createElement("a");
+        anchor.href = url;
+        anchor.download = `${baseName.replace(/\s+/g, "-")}.webster-scene.json`;
+        anchor.click();
+        URL.revokeObjectURL(url);
+        return;
+      }
+
+      const renderer = rendererRef.current;
+      if (!renderer) {
+        throw new Error("Canvas is not ready");
+      }
+
+      const exportCanvas = await renderer.exportToCanvas();
+      if (!exportCanvas) {
+        throw new Error("Add at least one visible object to export");
+      }
+
+      await downloadProjectExport(exportCanvas, baseName, format);
+    },
+    [engine, projectTitle],
+  );
 
   const workspaceValue = useMemo(
     () => ({
       engine,
       projectId,
       projectTitle,
-      projectWidth,
-      projectHeight,
+      projectCreatedAt,
       autosaveLabel,
       saveNow,
       applyProjectContent,
@@ -257,19 +308,20 @@ export function CanvasEnginePage() {
       cameraZoomPercent: Math.min(400, Math.max(25, Math.round(debug.cameraZoom * 100))),
       gridEnabled: editorGridEnabled,
       setGridEnabled: setEditorGridEnabled,
+      exportProject,
     }),
     [
       engine,
       projectId,
       projectTitle,
-      projectWidth,
-      projectHeight,
+      projectCreatedAt,
       autosaveLabel,
       saveNow,
       applyProjectContent,
       zoomIn,
       zoomOut,
       zoomReset,
+      exportProject,
       debug.cameraZoom,
       editorGridEnabled,
     ],
@@ -414,13 +466,41 @@ export function CanvasEnginePage() {
         navigate(nextPath);
         return;
       }
-
-      const allow = window.confirm("You have unsaved changes. Leave anyway?");
-      if (allow) {
-        navigate(nextPath);
-      }
+      setPendingLeavePath(nextPath);
     },
     [hasUnsavedChanges, navigate],
+  );
+
+  const applyTextFromPrompt = useCallback(
+    (textValue: string) => {
+      if (!textPrompt || textValue.trim().length === 0) {
+        return;
+      }
+
+      if (textPrompt.mode === "create") {
+        const textNodeId = `text-${Date.now()}`;
+        engine.addNode(
+          applyTextStyleToNode(
+            {
+              id: textNodeId,
+              layerId: DEFAULT_LAYER_ID,
+              type: "text",
+              bounds: { x: textPrompt.x, y: textPrompt.y, width: 1, height: 1 },
+              transform: createIdentityTransform(),
+              style: { fill: "#0f172a" },
+              data: { text: textValue, fontSize: DEFAULT_TEXT_FONT_SIZE },
+            },
+            { text: textValue },
+          ),
+        );
+        engine.setSelection([textNodeId]);
+        return;
+      }
+
+      engine.updateNode(textPrompt.nodeId, (prevNode) => applyTextStyleToNode(prevNode, { text: textValue }));
+      engine.setSelection([textPrompt.nodeId]);
+    },
+    [engine, textPrompt],
   );
 
   useEffect(() => {
@@ -662,7 +742,11 @@ export function CanvasEnginePage() {
         pickSceneJsonFile((json) => {
           const result = deserializeSceneFromJson(json);
           if (!result.ok) {
-            window.alert(`Import failed: ${result.error}`);
+            pushToast({
+              title: "Import failed",
+              message: result.error,
+              tone: "error",
+            });
             return;
           }
           engine.replaceScene(result.scene, { history: { label: "import-scene" } });
@@ -701,14 +785,28 @@ export function CanvasEnginePage() {
         }
         engine.batchUpdate(({ updateNode }) => {
           for (const nodeId of eligible) {
-            updateNode(nodeId, (prevNode) => ({
-              ...prevNode,
-              bounds: {
-                ...prevNode.bounds,
-                x: prevNode.bounds.x + arrowMove.x,
-                y: prevNode.bounds.y + arrowMove.y,
-              },
-            }));
+            updateNode(nodeId, (prevNode) => {
+              const points = prevNode.data?.points;
+              if (points && points.length > 0) {
+                const shiftedPoints = shiftPoints(points, arrowMove.x, arrowMove.y);
+                return {
+                  ...prevNode,
+                  bounds: buildPointsBounds(shiftedPoints),
+                  data: {
+                    ...(prevNode.data ?? {}),
+                    points: shiftedPoints,
+                  },
+                };
+              }
+              return {
+                ...prevNode,
+                bounds: {
+                  ...prevNode.bounds,
+                  x: prevNode.bounds.x + arrowMove.x,
+                  y: prevNode.bounds.y + arrowMove.y,
+                },
+              };
+            });
           }
         }, { history: { label: "nudge", mergeKey: `nudge:${selectedNodeIds.sort().join(",")}` } });
       }
@@ -739,22 +837,7 @@ export function CanvasEnginePage() {
     const activeTool = engine.getRuntimeSnapshot().activeTool;
 
     if (activeTool === "text") {
-      const textValue = window.prompt("Enter text", "New text");
-      if (!textValue || textValue.trim().length === 0) {
-        return;
-      }
-
-      const textNodeId = `text-${Date.now()}`;
-      engine.addNode({
-        id: textNodeId,
-        layerId: DEFAULT_LAYER_ID,
-        type: "text",
-        bounds: { x: worldPoint.x, y: worldPoint.y, width: Math.max(120, textValue.length * 10), height: 28 },
-        transform: createIdentityTransform(),
-        style: { fill: "#0f172a" },
-        data: { text: textValue },
-      });
-      engine.setSelection([textNodeId]);
+      setTextPrompt({ mode: "create", x: worldPoint.x, y: worldPoint.y });
       return;
     }
 
@@ -867,7 +950,7 @@ export function CanvasEnginePage() {
       const rotateOffsetWorld = ROTATE_HANDLE_OFFSET / camera.zoom;
       const rotateRadiusWorld = ROTATE_HANDLE_RADIUS / camera.zoom;
       const center = getNodePivotWorld(selectedNode);
-      const rotateHandle = getRotateHandlePoint(selectedNode, rotateOffsetWorld);
+      const rotateHandle = getRotateHandleWorld(selectedNode, rotateOffsetWorld);
 
       if (isPointInCircle(worldPoint, rotateHandle, rotateRadiusWorld)) {
         const startAngle = radiansToDegrees(Math.atan2(worldPoint.y - center.y, worldPoint.x - center.x));
@@ -885,13 +968,13 @@ export function CanvasEnginePage() {
       }
 
       if (!selectedNode.data?.points) {
-        const resizeHandle = findResizeHandleAtPoint(
-          worldPoint,
-          selectedNode.bounds,
-          handleSizeWorld,
-        );
+        const resizeHandle = findResizeHandleAtWorldPoint(worldPoint, selectedNode, handleSizeWorld);
 
         if (resizeHandle) {
+          const startWorldToLocal = invertMat2D(composeNodeLocalToWorldMatrix(selectedNode));
+          if (!startWorldToLocal) {
+            return;
+          }
           dragStateRef.current = {
             mode: "resize",
             pointerId: event.pointerId,
@@ -899,6 +982,7 @@ export function CanvasEnginePage() {
             handle: resizeHandle,
             startWorld: worldPoint,
             startBounds: { ...selectedNode.bounds },
+            startWorldToLocal,
           };
 
           event.currentTarget.setPointerCapture(event.pointerId);
@@ -1057,8 +1141,10 @@ export function CanvasEnginePage() {
     }
 
     if (dragState.mode === "resize") {
-      const deltaX = worldPoint.x - dragState.startWorld.x;
-      const deltaY = worldPoint.y - dragState.startWorld.y;
+      const localStart = applyMat2DToPoint(dragState.startWorldToLocal, dragState.startWorld);
+      const localCurrent = applyMat2DToPoint(dragState.startWorldToLocal, worldPoint);
+      const deltaX = localCurrent.x - localStart.x;
+      const deltaY = localCurrent.y - localStart.y;
       const nextBounds = applyResizeHandle(dragState.startBounds, dragState.handle, deltaX, deltaY);
 
       engine.updateNode(dragState.nodeId, (prevNode) => ({
@@ -1266,23 +1352,11 @@ export function CanvasEnginePage() {
       return;
     }
 
-    const nextText = window.prompt("Edit text", hitNode.data?.text ?? "") ?? "";
-    if (nextText.trim().length === 0) {
-      return;
-    }
-
-    engine.updateNode(hitNodeId, (prevNode) => ({
-      ...prevNode,
-      bounds: {
-        ...prevNode.bounds,
-        width: Math.max(120, nextText.length * 10),
-      },
-      data: {
-        ...(prevNode.data ?? {}),
-        text: nextText,
-      },
-    }));
-    engine.setSelection([hitNodeId]);
+    setTextPrompt({
+      mode: "edit",
+      nodeId: hitNodeId,
+      defaultValue: hitNode.data?.text ?? "",
+    });
   }
 
   function handleCanvasWheel(event: WheelEvent, canvas: HTMLCanvasElement): void {
@@ -1436,10 +1510,10 @@ export function CanvasEnginePage() {
   };
   const resizeHandles =
     showHandles && selectedNode && !selectedNode.data?.points
-      ? getResizeHandles(selectedNode.bounds)
+      ? getResizeHandlesWorld(selectedNode)
       : [];
   const rotateHandle = showHandles && selectedNode
-    ? getRotateHandlePoint(selectedNode, ROTATE_HANDLE_OFFSET / camera.zoom)
+    ? getRotateHandleWorld(selectedNode, ROTATE_HANDLE_OFFSET / camera.zoom)
     : null;
 
   const canvasSurface = (
@@ -1611,13 +1685,55 @@ export function CanvasEnginePage() {
   }
 
   return (
-    <EditorWorkspaceProvider value={workspaceValue}>
-      <CanvasEditorLayout
-        canvas={
-          <div className="relative h-full min-h-0 w-full overflow-hidden bg-slate-100 font-sans">{canvasSurface}</div>
-        }
+    <>
+      <EditorWorkspaceProvider value={workspaceValue}>
+        <CanvasEditorLayout
+          canvas={
+            <div className="relative h-full min-h-0 w-full overflow-hidden bg-slate-100 font-sans">{canvasSurface}</div>
+          }
+        />
+      </EditorWorkspaceProvider>
+
+      <ConfirmDialog
+        open={Boolean(pendingLeavePath)}
+        title="Leave editor?"
+        description="You have unsaved changes. Leave without saving?"
+        confirmLabel="Leave"
+        confirmTone="danger"
+        onCancel={() => setPendingLeavePath(null)}
+        onConfirm={() => {
+          const path = pendingLeavePath;
+          setPendingLeavePath(null);
+          if (path) navigate(path);
+        }}
       />
-    </EditorWorkspaceProvider>
+
+      <PromptDialog
+        open={textPrompt?.mode === "create"}
+        title="Add text"
+        label="Text"
+        defaultValue="New text"
+        confirmLabel="Add"
+        onCancel={() => setTextPrompt(null)}
+        onConfirm={(value) => {
+          applyTextFromPrompt(value);
+          setTextPrompt(null);
+        }}
+      />
+
+      <PromptDialog
+        open={textPrompt?.mode === "edit"}
+        title="Edit text"
+        label="Text"
+        defaultValue={textPrompt?.mode === "edit" ? textPrompt.defaultValue : ""}
+        confirmLabel="Save"
+        onCancel={() => setTextPrompt(null)}
+        onConfirm={(value) => {
+          applyTextFromPrompt(value);
+          setTextPrompt(null);
+        }}
+      />
+    </>
   );
 }
 
@@ -1771,53 +1887,6 @@ function getNodePivotWorld(node: SceneNode): Point {
   const pivotLocal = getDefaultNodePivot(node.bounds);
   const m = composeNodeLocalToWorldMatrix(node);
   return applyMat2DToPoint(m, pivotLocal);
-}
-
-function getRotateHandlePoint(node: SceneNode, offset: number): Point {
-  const worldBounds = getNodeWorldBounds(node);
-  return {
-    x: worldBounds.x + worldBounds.width / 2,
-    y: worldBounds.y - offset,
-  };
-}
-
-function getResizeHandles(bounds: { x: number; y: number; width: number; height: number }): Array<{ id: ResizeHandle; x: number; y: number }> {
-  const { x, y, width, height } = bounds;
-  const cx = x + width / 2;
-  const cy = y + height / 2;
-
-  return [
-    { id: "nw", x, y },
-    { id: "n", x: cx, y },
-    { id: "ne", x: x + width, y },
-    { id: "e", x: x + width, y: cy },
-    { id: "se", x: x + width, y: y + height },
-    { id: "s", x: cx, y: y + height },
-    { id: "sw", x, y: y + height },
-    { id: "w", x, y: cy },
-  ];
-}
-
-function findResizeHandleAtPoint(
-  point: Point,
-  bounds: { x: number; y: number; width: number; height: number },
-  size: number,
-): ResizeHandle | null {
-  const half = size / 2;
-  const handles = getResizeHandles(bounds);
-
-  for (const handle of handles) {
-    if (
-      point.x >= handle.x - half &&
-      point.x <= handle.x + half &&
-      point.y >= handle.y - half &&
-      point.y <= handle.y + half
-    ) {
-      return handle.id;
-    }
-  }
-
-  return null;
 }
 
 function applyResizeHandle(

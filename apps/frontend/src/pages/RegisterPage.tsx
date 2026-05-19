@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { useMutation } from "@apollo/client/react";
-import { useNavigate, Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 
 import { MarketingShell } from "@/components/layout/MarketingShell";
 import {
@@ -10,7 +10,7 @@ import {
   authLinkClass,
   authPrimaryButtonClass,
 } from "@/components/ui/AuthCard";
-import { REGISTER_MUTATION, GET_CURRENT_USER } from "../graphql/auth.graphql";
+import { REGISTER_MUTATION } from "../graphql/auth.graphql";
 
 interface FieldErrors {
   firstName?: string;
@@ -61,9 +61,7 @@ export function RegisterPage() {
     return next;
   }, [formData]);
 
-  const [registerMutation] = useMutation(REGISTER_MUTATION, {
-    refetchQueries: [{ query: GET_CURRENT_USER }],
-  });
+  const [registerMutation] = useMutation(REGISTER_MUTATION);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
@@ -74,28 +72,33 @@ export function RegisterPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setFieldErrors(validationErrors);
-    if (Object.keys(validationErrors).length === 0) {
-      setLoading(true);
-      try {
-        await registerMutation({
-          variables: {
-            input: {
-              email: formData.email.trim(),
-              password: formData.password,
-              firstName: formData.firstName.trim(),
-              lastName: formData.lastName.trim(),
-            },
+    if (Object.keys(validationErrors).length > 0) {
+      return;
+    }
+
+    setLoading(true);
+    try {
+      await registerMutation({
+        variables: {
+          input: {
+            email: formData.email.trim(),
+            password: formData.password,
+            firstName: formData.firstName.trim(),
+            lastName: formData.lastName.trim(),
           },
-        });
-        navigate("/");
-      } catch (err) {
-        setFieldErrors((prev) => ({
-          ...prev,
-          form: err.message || "Registration failed",
-        }));
-      } finally {
-        setLoading(false);
-      }
+        },
+      });
+      navigate(
+        `/login?registered=1&email=${encodeURIComponent(formData.email.trim())}`,
+        { replace: true },
+      );
+    } catch (err) {
+      setFieldErrors((prev) => ({
+        ...prev,
+        form: err instanceof Error ? err.message : "Registration failed",
+      }));
+    } finally {
+      setLoading(false);
     }
   };
 

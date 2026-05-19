@@ -1,4 +1,4 @@
-import { FC, InputHTMLAttributes } from "react";
+import { FC, InputHTMLAttributes, useId } from "react";
 
 interface NumberInputProps extends Omit<InputHTMLAttributes<HTMLInputElement>, "type"> {
   label?: string;
@@ -19,11 +19,17 @@ export const NumberInput: FC<NumberInputProps> = ({
   ...props
 }) => {
   const safeValue = value ?? "";
+  const inputId = useId();
   return (
     <div className="flex flex-col gap-1.5">
-      {label && <label className="text-xs font-medium text-slate-700">{label}</label>}
+      {label ? (
+        <label htmlFor={inputId} className="text-xs font-medium text-slate-700">
+          {label}
+        </label>
+      ) : null}
       <div className="relative flex items-center">
         <input
+          id={inputId}
           type="number"
           min={min}
           max={max}

@@ -131,7 +131,7 @@ describe("AuthService", () => {
       lastName: "Doe",
     };
 
-    it("should register a new user and return tokens", async () => {
+    it("should register a new user without issuing session tokens", async () => {
       usersService.findByEmail?.mockResolvedValue(null);
       usersService.create?.mockResolvedValue(mockUser({ id: "new-id", email: input.email }));
 
@@ -141,8 +141,7 @@ describe("AuthService", () => {
       expect(usersService.create).toHaveBeenCalledWith(
         expect.objectContaining({ email: input.email, passwordHash: "hashed-value" }),
       );
-      expect(result).toHaveProperty("accessToken");
-      expect(result).toHaveProperty("refreshToken");
+      expect(result.message).toContain("verify");
     });
 
     it("should throw ConflictException if email exists", async () => {
@@ -167,13 +166,22 @@ describe("AuthService", () => {
 
   describe("login", () => {
     it("should return tokens for valid credentials", async () => {
-      usersService.findByEmail?.mockResolvedValue(mockUser());
+      usersService.findByEmail?.mockResolvedValue(mockUser({ isEmailVerified: true }));
       mockVerifyFn.mockResolvedValue(true);
 
       const result = await authService.login("test@example.com", "password123");
 
       expect(result).toHaveProperty("accessToken");
       expect(result).toHaveProperty("refreshToken");
+    });
+
+    it("should reject login when email is not verified", async () => {
+      usersService.findByEmail?.mockResolvedValue(mockUser({ isEmailVerified: false }));
+      mockVerifyFn.mockResolvedValue(true);
+
+      await expect(authService.login("test@example.com", "password123")).rejects.toThrow(
+        UnauthorizedException,
+      );
     });
 
     it("should throw UnauthorizedException for unknown email", async () => {
@@ -195,7 +203,7 @@ describe("AuthService", () => {
 
     it("should require 2FA code when enabled", async () => {
       usersService.findByEmail?.mockResolvedValue(
-        mockUser({ isTwoFactorEnabled: true, twoFactorSecret: "secret" }),
+        mockUser({ isEmailVerified: true, isTwoFactorEnabled: true, twoFactorSecret: "secret" }),
       );
       mockVerifyFn.mockResolvedValue(true);
 
@@ -206,7 +214,7 @@ describe("AuthService", () => {
 
     it("should reject invalid 2FA code", async () => {
       usersService.findByEmail?.mockResolvedValue(
-        mockUser({ isTwoFactorEnabled: true, twoFactorSecret: "secret" }),
+        mockUser({ isEmailVerified: true, isTwoFactorEnabled: true, twoFactorSecret: "secret" }),
       );
       mockVerifyFn.mockResolvedValue(true);
       mockOtpVerify.mockReturnValue({ valid: false } as any);
@@ -218,7 +226,7 @@ describe("AuthService", () => {
 
     it("should accept valid 2FA code", async () => {
       usersService.findByEmail?.mockResolvedValue(
-        mockUser({ isTwoFactorEnabled: true, twoFactorSecret: "secret" }),
+        mockUser({ isEmailVerified: true, isTwoFactorEnabled: true, twoFactorSecret: "secret" }),
       );
       mockVerifyFn.mockResolvedValue(true);
       mockOtpVerify.mockReturnValue({ valid: true } as any);

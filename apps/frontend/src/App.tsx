@@ -1,4 +1,4 @@
-import { Navigate, Route, Routes } from "react-router-dom";
+import { Navigate, Route, Routes, useSearchParams } from "react-router-dom";
 
 import { PrivateRoute } from "./components/PrivateRoute.tsx";
 import { CanvasEnginePage } from "./pages/CanvasEnginePage.tsx";
@@ -26,6 +26,7 @@ export default function App() {
         <Route path="/verify-email" element={<VerifyEmailPage />} />
         <Route path="/reset-password" element={<ResetPasswordPage />} />
         <Route path="/magic-link" element={<MagicLinkPage />} />
+        <Route path="/auth/magic" element={<MagicLinkRedirect />} />
         <Route path="/oauth/callback" element={<OAuthCallbackPage />} />
         <Route
           path="/profile"
@@ -74,4 +75,12 @@ function AppLayout({ children }: { children: React.ReactNode }) {
       <ToastViewport />
     </>
   );
+}
+
+/** Legacy email links used `/auth/magic` — keep working after route rename. */
+function MagicLinkRedirect() {
+  const [searchParams] = useSearchParams();
+  const token = searchParams.get("token");
+  const query = token ? `?token=${encodeURIComponent(token)}` : "";
+  return <Navigate to={`/magic-link${query}`} replace />;
 }

@@ -6,8 +6,6 @@ export const USER_TEMPLATES_QUERY = gql`
       id
       title
       thumbnailUrl
-      width
-      height
       isPublic
       updatedAt
     }

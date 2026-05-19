@@ -28,6 +28,35 @@ body {
 	-webkit-font-smoothing: antialiased;
 }
 
+/* Skip link — visible only on keyboard focus (WCAG 2.4.1) */
+.skip-to-content {
+	position: absolute;
+	left: -9999px;
+	top: 0.75rem;
+	z-index: 10000;
+	border-radius: 0.75rem;
+	background: var(--ink);
+	color: #fff;
+	padding: 0.5rem 1rem;
+	font-size: 0.875rem;
+	font-weight: 600;
+	text-decoration: none;
+}
+
+.skip-to-content:focus {
+	left: 0.75rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	*,
+	*::before,
+	*::after {
+		animation-duration: 0.01ms !important;
+		animation-iteration-count: 1 !important;
+		transition-duration: 0.01ms !important;
+	}
+}
+
 @layer utilities {
 	.bg-app-gradient {
 		background: var(--gradient-app);

@@ -1,6 +1,8 @@
 import type { ReactNode } from "react";
 import { Link, useLocation } from "react-router-dom";
 
+import { SkipToContent } from "@/components/a11y/SkipToContent";
+import { focusRingOnDarkClass } from "@/shared/lib/a11y";
 import { BrandLogo } from "./BrandLogo";
 
 type AppShellProps = {
@@ -22,13 +24,14 @@ export function AppShell({ children, title, subtitle, actions }: AppShellProps) 
 
   return (
     <div className="relative min-h-screen overflow-hidden bg-app-gradient text-white">
+      <SkipToContent />
       <div className="pointer-events-none absolute -left-20 top-0 h-96 w-96 rounded-full bg-fuchsia-500/20 blur-3xl" />
       <div className="pointer-events-none absolute right-0 top-1/4 h-80 w-80 rounded-full bg-cyan-400/15 blur-3xl" />
 
       <header className="relative z-20 border-b border-white/10 bg-black/20 backdrop-blur-md">
-        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4 px-6 py-4">
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4 px-4 py-4 sm:px-6">
           <BrandLogo variant="light" />
-          <nav className="flex flex-wrap items-center gap-1">
+          <nav className="flex flex-wrap items-center gap-1" aria-label="Main navigation">
             {NAV.map((item) => {
               const active =
                 item.to === "/"
@@ -38,10 +41,11 @@ export function AppShell({ children, title, subtitle, actions }: AppShellProps) 
                 <Link
                   key={item.to}
                   to={item.to}
+                  aria-current={active ? "page" : undefined}
                   className={
                     active
-                      ? "rounded-full bg-white/15 px-3.5 py-2 text-sm font-semibold text-white"
-                      : "rounded-full px-3.5 py-2 text-sm font-medium text-violet-100/80 transition hover:bg-white/10 hover:text-white"
+                      ? `rounded-full bg-white/15 px-3.5 py-2 text-sm font-semibold text-white ${focusRingOnDarkClass}`
+                      : `rounded-full px-3.5 py-2 text-sm font-medium text-violet-100/80 transition hover:bg-white/10 hover:text-white ${focusRingOnDarkClass}`
                   }
                 >
                   {item.label}
@@ -50,7 +54,8 @@ export function AppShell({ children, title, subtitle, actions }: AppShellProps) 
             })}
             <Link
               to="/profile"
-              className="ml-1 rounded-full bg-linear-to-r from-violet-500 to-fuchsia-500 px-4 py-2 text-sm font-semibold text-white shadow-md shadow-violet-900/30"
+              aria-current={location.pathname === "/profile" ? "page" : undefined}
+              className={`ml-1 rounded-full bg-linear-to-r from-violet-500 to-fuchsia-500 px-4 py-2 text-sm font-semibold text-white shadow-md shadow-violet-900/30 ${focusRingOnDarkClass}`}
             >
               Profile
             </Link>
@@ -58,7 +63,7 @@ export function AppShell({ children, title, subtitle, actions }: AppShellProps) 
         </div>
       </header>
 
-      <main className="relative z-10 mx-auto max-w-6xl px-6 py-10">
+      <main id="main-content" tabIndex={-1} className="relative z-10 mx-auto max-w-6xl px-4 py-8 sm:px-6 sm:py-10">
         {title ? (
           <div className="mb-8 flex flex-wrap items-end justify-between gap-4">
             <div>

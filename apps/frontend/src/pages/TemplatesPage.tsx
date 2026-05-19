@@ -1,70 +1,56 @@
-import { useCallback, useState } from "react";
+import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useMutation, useQuery } from "@apollo/client/react";
-import { LayoutTemplate, Pencil, Plus, Trash2 } from "lucide-react";
+import { LayoutTemplate, Pencil, Trash2 } from "lucide-react";
 
 import { AppShell } from "@/components/layout/AppShell";
 import { AppPageSpinner } from "@/components/ui/PageSpinner";
-import { createEmptySerializableSceneState } from "@/shared/lib/canvas-engine";
 import {
-  CREATE_USER_TEMPLATE_MUTATION,
   DELETE_USER_TEMPLATE_MUTATION,
   UPDATE_USER_TEMPLATE_MUTATION,
   USER_TEMPLATES_QUERY,
   CREATE_PROJECT_FROM_TEMPLATE_MUTATION,
 } from "@/graphql/templates.graphql";
 import { BlockingOverlay } from "@/components/ui/BlockingOverlay";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { PromptDialog } from "@/components/ui/PromptDialog";
 import { useToastStore } from "@/shared/stores/toast.store";
+import { useAuthStore } from "@/shared/stores/auth.store";
+import { formatDateTime } from "@/shared/lib/format-datetime";
 
 type TemplateItem = {
   id: string;
   title: string;
-  width?: number;
-  height?: number;
   updatedAt?: string;
   isPublic?: boolean;
 };
 
-const EMPTY_SCENE = createEmptySerializableSceneState();
-
-function formatDate(value?: string) {
-  if (!value) return "Unknown";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleDateString(undefined, {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  });
-}
-
 export function TemplatesPage() {
   const navigate = useNavigate();
-  const [createModalOpen, setCreateModalOpen] = useState(false);
-  const [editTemplate, setEditTemplate] = useState<TemplateItem | null>(null);
-  const [title, setTitle] = useState("");
-  const [width, setWidth] = useState(800);
-  const [height, setHeight] = useState(600);
-  const [formError, setFormError] = useState<string | null>(null);
+  const user = useAuthStore((state) => state.user);
+  const pushToast = useToastStore((state) => state.pushToast);
+  const [renameTemplate, setRenameTemplate] = useState<TemplateItem | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<TemplateItem | null>(null);
+  const [useTemplatePrompt, setUseTemplatePrompt] = useState<TemplateItem | null>(null);
 
-  const { data, loading, error, refetch } = useQuery(USER_TEMPLATES_QUERY);
+  const { data, loading, error, refetch } = useQuery(USER_TEMPLATES_QUERY, {
+    skip: !user,
+    fetchPolicy: "cache-and-network",
+  });
 
   const [createFromTemplate, { loading: creatingProject }] = useMutation(
     CREATE_PROJECT_FROM_TEMPLATE_MUTATION,
     {
       onError: (err) => {
         pushToast({
-          title: "Template failed",
+          title: "Could not create project",
           message: err.message,
           tone: "error",
         });
       },
     },
   );
-  const [createUserTemplate, { loading: creatingTemplate }] = useMutation(CREATE_USER_TEMPLATE_MUTATION, {
-    refetchQueries: [{ query: USER_TEMPLATES_QUERY }],
-  });
   const [updateUserTemplate, { loading: updatingTemplate }] = useMutation(UPDATE_USER_TEMPLATE_MUTATION, {
     refetchQueries: [{ query: USER_TEMPLATES_QUERY }],
   });
@@ -75,108 +61,40 @@ export function TemplatesPage() {
   const templates =
     (data as { userTemplates?: TemplateItem[] } | undefined)?.userTemplates ?? [];
 
-  const busy = creatingProject || creatingTemplate || updatingTemplate || deletingTemplate;
+  const busy = creatingProject || updatingTemplate || deletingTemplate;
 
-  const openCreateModal = useCallback(() => {
-    setTitle(`Template ${new Date().toLocaleDateString()}`);
-    setWidth(800);
-    setHeight(600);
-    setFormError(null);
-    setCreateModalOpen(true);
-  }, []);
-
-  const closeCreateModal = useCallback(() => {
-    setCreateModalOpen(false);
-    setFormError(null);
-  }, []);
-
-  const openEditModal = useCallback((template: TemplateItem) => {
-    setEditTemplate(template);
-    setTitle(template.title);
-    setWidth(template.width ?? 800);
-    setHeight(template.height ?? 600);
-    setFormError(null);
-  }, []);
-
-  const closeEditModal = useCallback(() => {
-    setEditTemplate(null);
-    setFormError(null);
-  }, []);
-
-  const validateForm = (): boolean => {
-    if (!title.trim()) {
-      setFormError("Title is required.");
-      return false;
-    }
-    if (!Number.isFinite(width) || width < 1 || width > 10000) {
-      setFormError("Width must be between 1 and 10000.");
-      return false;
-    }
-    if (!Number.isFinite(height) || height < 1 || height > 10000) {
-      setFormError("Height must be between 1 and 10000.");
-      return false;
-    }
-    return true;
-  };
-
-  const handleCreateTemplate = async () => {
-    if (!validateForm()) return;
-    setFormError(null);
-    try {
-      await createUserTemplate({
-        variables: {
-          input: {
-            title: title.trim(),
-            width: Math.floor(width),
-            height: Math.floor(height),
-            content: EMPTY_SCENE,
-            isPublic: false,
-          },
-        },
-      });
-      closeCreateModal();
-    } catch (e) {
-      setFormError(e instanceof Error ? e.message : "Failed to create template.");
-    }
-  };
-
-  const handleUpdateTemplate = async () => {
-    if (!editTemplate || !validateForm()) return;
-    setFormError(null);
+  const handleRenameTemplate = async (templateId: string, nextTitle: string) => {
     try {
       await updateUserTemplate({
         variables: {
-          id: editTemplate.id,
-          input: {
-            title: title.trim(),
-            width: Math.floor(width),
-            height: Math.floor(height),
-          },
+          id: templateId,
+          input: { title: nextTitle },
         },
       });
-      closeEditModal();
+      pushToast({ title: "Template renamed", tone: "success" });
     } catch (e) {
-      setFormError(e instanceof Error ? e.message : "Failed to update template.");
+      pushToast({
+        title: "Rename failed",
+        message: e instanceof Error ? e.message : "Failed to update template.",
+        tone: "error",
+      });
     }
   };
 
-  const handleDeleteTemplate = async (template: TemplateItem) => {
-    if (!window.confirm(`Delete template "${template.title}"? This cannot be undone.`)) {
-      return;
-    }
+  const handleDeleteTemplate = async () => {
+    if (!confirmDelete) return;
     setActionError(null);
     try {
-      await deleteUserTemplate({ variables: { id: template.id } });
+      await deleteUserTemplate({ variables: { id: confirmDelete.id } });
+      pushToast({ title: "Template deleted", message: confirmDelete.title, tone: "success" });
+      setConfirmDelete(null);
     } catch (e) {
       setActionError(e instanceof Error ? e.message : "Failed to delete template.");
     }
   };
 
-  const handleUseTemplate = async (template: TemplateItem) => {
+  const handleUseTemplate = async (template: TemplateItem, projectTitle: string) => {
     setActionError(null);
-    const projectTitle = window.prompt("Project title", template.title)?.trim();
-    if (projectTitle === "") return;
-
     try {
       const result = await createFromTemplate({
         variables: {
@@ -197,24 +115,14 @@ export function TemplatesPage() {
   };
 
   return (
-    <AppShell
-      title="My templates"
-      subtitle="Templates"
-      actions={
-        <button
-          type="button"
-          onClick={openCreateModal}
-          disabled={busy}
-          className="inline-flex items-center gap-2 rounded-full bg-linear-to-r from-violet-500 to-fuchsia-500 px-5 py-2.5 text-sm font-bold text-white shadow-lg disabled:opacity-60"
-        >
-          <Plus className="h-4 w-4" />
-          New template
-        </button>
-      }
-    >
+    <AppShell title="My templates" subtitle="Templates">
       <p className="mb-6 max-w-2xl text-sm text-violet-100/75">
-        Save layouts from the editor footer, or create a blank template here. Use a template to spin up a new
-        project with the same canvas size and scene content.
+        Templates are saved from your projects: open the{" "}
+        <Link to="/editor" className="font-semibold text-cyan-300 hover:underline">
+          editor
+        </Link>
+        , design a board, then use <strong className="font-semibold text-violet-100">Save as template</strong>{" "}
+        in the footer. Start a new project here from any saved template.
       </p>
 
       {actionError ? (
@@ -241,17 +149,16 @@ export function TemplatesPage() {
       {!loading && templates.length === 0 && !error ? (
         <div className="glass-card rounded-2xl px-6 py-10 text-center">
           <LayoutTemplate className="mx-auto h-10 w-10 text-cyan-300/80" />
-          <p className="mt-4 text-sm text-violet-100/80">You have no templates yet.</p>
+          <p className="mt-4 text-sm text-violet-100/80">No templates yet.</p>
           <p className="mt-2 text-xs text-violet-200/60">
-            Create one below or save the current scene from the editor (footer → Template).
+            Create a project, design it in the editor, then save it as a template from the footer.
           </p>
-          <button
-            type="button"
-            onClick={openCreateModal}
-            className="mt-6 rounded-full bg-linear-to-r from-violet-500 to-fuchsia-500 px-5 py-2.5 text-sm font-semibold text-white"
+          <Link
+            to="/projects"
+            className="mt-6 inline-flex rounded-full bg-linear-to-r from-violet-500 to-fuchsia-500 px-5 py-2.5 text-sm font-semibold text-white"
           >
-            Create first template
-          </button>
+            Go to projects
+          </Link>
         </div>
       ) : null}
 
@@ -265,14 +172,12 @@ export function TemplatesPage() {
               <LayoutTemplate className="h-8 w-8 text-white/90" />
             </div>
             <h2 className="text-lg font-semibold text-white">{template.title}</h2>
-            <p className="mt-1 text-xs text-violet-200/70">
-              {template.width ?? 800} × {template.height ?? 600} px · Updated {formatDate(template.updatedAt)}
-            </p>
+            <p className="mt-1 text-xs text-violet-200/70">Updated {formatDateTime(template.updatedAt)}</p>
             <div className="mt-auto flex flex-wrap gap-2 pt-4">
               <button
                 type="button"
                 disabled={busy}
-                onClick={() => void handleUseTemplate(template)}
+                onClick={() => setUseTemplatePrompt(template)}
                 className="rounded-full bg-linear-to-r from-violet-500 to-fuchsia-500 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
               >
                 {creatingProject ? "Creating…" : "New project"}
@@ -280,17 +185,17 @@ export function TemplatesPage() {
               <button
                 type="button"
                 disabled={busy}
-                onClick={() => openEditModal(template)}
+                onClick={() => setRenameTemplate(template)}
                 className="inline-flex items-center gap-1 rounded-full border border-white/20 px-3 py-2 text-sm text-violet-100 hover:bg-white/10 disabled:opacity-60"
-                title="Rename / resize"
+                title="Rename template"
               >
                 <Pencil className="h-3.5 w-3.5" />
-                Edit
+                Rename
               </button>
               <button
                 type="button"
                 disabled={busy}
-                onClick={() => void handleDeleteTemplate(template)}
+                onClick={() => setConfirmDelete(template)}
                 className="inline-flex items-center gap-1 rounded-full border border-rose-400/40 px-3 py-2 text-sm text-rose-200 hover:bg-rose-500/10 disabled:opacity-60"
                 title="Delete template"
               >
@@ -302,162 +207,53 @@ export function TemplatesPage() {
         ))}
       </section>
 
-      {!loading && templates.length > 0 ? (
-        <p className="mt-8 text-center text-xs text-violet-200/50">
-          Tip: open a project in the{" "}
-          <Link to="/editor" className="text-cyan-300 hover:underline">
-            editor
-          </Link>{" "}
-          and use <strong className="font-semibold text-violet-100">Template</strong> in the footer to save the
-          current scene.
-        </p>
-      ) : null}
+      <PromptDialog
+        open={Boolean(renameTemplate)}
+        title="Rename template"
+        label="Title"
+        defaultValue={renameTemplate?.title ?? ""}
+        confirmLabel="Save"
+        busy={updatingTemplate}
+        onCancel={() => setRenameTemplate(null)}
+        onConfirm={(nextTitle) => {
+          const template = renameTemplate;
+          setRenameTemplate(null);
+          if (template) void handleRenameTemplate(template.id, nextTitle);
+        }}
+      />
 
-      {createModalOpen ? (
-        <TemplateFormModal
-          title="New template"
-          description="Creates an empty canvas preset you can open as a new project later."
-          formTitle={title}
-          width={width}
-          height={height}
-          formError={formError}
-          busy={creatingTemplate}
-          submitLabel="Create template"
-          onTitleChange={setTitle}
-          onWidthChange={setWidth}
-          onHeightChange={setHeight}
-          onClose={closeCreateModal}
-          onSubmit={() => void handleCreateTemplate()}
-        />
-      ) : null}
+      {busy ? <BlockingOverlay label="Working…" /> : null}
 
-      {editTemplate ? (
-        <TemplateFormModal
-          title="Edit template"
-          description="Update the display name and default canvas size. Scene content is unchanged."
-          formTitle={title}
-          width={width}
-          height={height}
-          formError={formError}
-          busy={updatingTemplate}
-          submitLabel="Save changes"
-          onTitleChange={setTitle}
-          onWidthChange={setWidth}
-          onHeightChange={setHeight}
-          onClose={closeEditModal}
-          onSubmit={() => void handleUpdateTemplate()}
-        />
-      ) : null}
+      <ConfirmDialog
+        open={Boolean(confirmDelete)}
+        title="Delete template?"
+        description={
+          confirmDelete
+            ? `"${confirmDelete.title}" will be permanently removed.`
+            : undefined
+        }
+        confirmLabel="Delete"
+        confirmTone="danger"
+        busy={deletingTemplate}
+        onCancel={() => setConfirmDelete(null)}
+        onConfirm={() => void handleDeleteTemplate()}
+      />
+
+      <PromptDialog
+        open={Boolean(useTemplatePrompt)}
+        title="New project from template"
+        description="Choose a name for the new board."
+        label="Project title"
+        defaultValue={useTemplatePrompt?.title ?? ""}
+        confirmLabel="Create & open"
+        busy={creatingProject}
+        onCancel={() => setUseTemplatePrompt(null)}
+        onConfirm={(projectTitle) => {
+          const template = useTemplatePrompt;
+          setUseTemplatePrompt(null);
+          if (template) void handleUseTemplate(template, projectTitle);
+        }}
+      />
     </AppShell>
-  );
-}
-
-type TemplateFormModalProps = {
-  title: string;
-  description: string;
-  formTitle: string;
-  width: number;
-  height: number;
-  formError: string | null;
-  busy: boolean;
-  submitLabel: string;
-  onTitleChange: (v: string) => void;
-  onWidthChange: (v: number) => void;
-  onHeightChange: (v: number) => void;
-  onClose: () => void;
-  onSubmit: () => void;
-};
-
-function TemplateFormModal({
-  title,
-  description,
-  formTitle,
-  width,
-  height,
-  formError,
-  busy,
-  submitLabel,
-  onTitleChange,
-  onWidthChange,
-  onHeightChange,
-  onClose,
-  onSubmit,
-}: TemplateFormModalProps) {
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
-      role="presentation"
-      onMouseDown={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-    >
-      <div
-        className="w-full max-w-md rounded-2xl border border-white/10 bg-violet-950 p-6 shadow-2xl"
-        role="dialog"
-        aria-modal="true"
-        onMouseDown={(e) => e.stopPropagation()}
-      >
-        <h2 className="text-lg font-semibold text-white">{title}</h2>
-        <p className="mt-1 text-sm text-violet-200/70">{description}</p>
-
-        <label className="mt-5 block text-sm font-medium text-violet-100">
-          Title
-          <input
-            className="mt-1.5 w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-white outline-none focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/30"
-            value={formTitle}
-            onChange={(e) => onTitleChange(e.target.value)}
-            autoFocus
-          />
-        </label>
-
-        <div className="mt-4 grid grid-cols-2 gap-3">
-          <label className="text-sm font-medium text-violet-100">
-            Width (px)
-            <input
-              type="number"
-              min={1}
-              max={10000}
-              className="mt-1.5 w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-white outline-none focus:border-cyan-400"
-              value={width}
-              onChange={(e) => onWidthChange(Number(e.target.value))}
-            />
-          </label>
-          <label className="text-sm font-medium text-violet-100">
-            Height (px)
-            <input
-              type="number"
-              min={1}
-              max={10000}
-              className="mt-1.5 w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-white outline-none focus:border-cyan-400"
-              value={height}
-              onChange={(e) => onHeightChange(Number(e.target.value))}
-            />
-          </label>
-        </div>
-
-        {formError ? <p className="mt-3 text-sm text-rose-300">{formError}</p> : null}
-
-        <div className="mt-6 flex justify-end gap-3">
-          <button
-            type="button"
-            className="rounded-full border border-white/20 px-4 py-2 text-sm text-violet-100 hover:bg-white/10"
-            onClick={onClose}
-            disabled={busy}
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            className="rounded-full bg-linear-to-r from-violet-500 to-fuchsia-500 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
-            onClick={onSubmit}
-            disabled={busy}
-          >
-            {busy ? "Saving…" : submitLabel}
-          </button>
-        </div>
-      </div>
-
-      {creating ? <BlockingOverlay label="Preparing template..." /> : null}
-    </div>
   );
 }

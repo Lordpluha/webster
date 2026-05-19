@@ -196,33 +196,33 @@ export function ProfilePage() {
 
         {/* Edit Profile Modal */}
         {modal === "edit" && (
-          <div className="fixed inset-0 flex items-center justify-center bg-black/50 px-4">
-            <div className="max-w-md w-full rounded-2xl border border-slate-800 bg-slate-900 p-6">
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4 backdrop-blur-sm">
+            <div className="w-full max-w-md rounded-2xl border border-white/10 bg-violet-950 p-6 shadow-2xl">
               <h2 className="text-xl font-semibold text-white">Edit profile</h2>
 
               <form onSubmit={handleUpdateProfile} className="mt-6 space-y-4">
                 <div>
-                  <label htmlFor="firstName" className="text-sm text-slate-300">
+                  <label htmlFor="firstName" className="text-sm text-violet-100">
                     First name
                   </label>
                   <input
                     id="firstName"
                     name="firstName"
                     defaultValue={user.firstName}
-                    className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-800 px-4 py-2 text-slate-100"
+                    className="mt-2 w-full rounded-xl border border-white/15 bg-white/5 px-4 py-2 text-white outline-none focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/30"
                     required
                   />
                 </div>
 
                 <div>
-                  <label htmlFor="lastName" className="text-sm text-slate-300">
+                  <label htmlFor="lastName" className="text-sm text-violet-100">
                     Last name
                   </label>
                   <input
                     id="lastName"
                     name="lastName"
                     defaultValue={user.lastName}
-                    className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-800 px-4 py-2 text-slate-100"
+                    className="mt-2 w-full rounded-xl border border-white/15 bg-white/5 px-4 py-2 text-white outline-none focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/30"
                     required
                   />
                 </div>
@@ -237,14 +237,14 @@ export function ProfilePage() {
                   <button
                     type="button"
                     onClick={() => setModal(null)}
-                    className="flex-1 rounded-full border border-slate-600 px-4 py-2 text-sm text-slate-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+                    className="flex-1 rounded-full border border-white/20 px-4 py-2 text-sm text-violet-100 hover:bg-white/10"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
                     disabled={updateLoading}
-                    className="flex-1 rounded-full bg-linear-to-r from-violet-500 to-fuchsia-500 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+                    className="flex-1 rounded-full bg-linear-to-r from-violet-500 to-fuchsia-500 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
                   >
                     {updateLoading ? "Saving…" : "Save"}
                   </button>
@@ -256,48 +256,48 @@ export function ProfilePage() {
 
         {/* Change Password Modal */}
         {modal === "password" && (
-          <div className="fixed inset-0 flex items-center justify-center bg-black/50 px-4">
-            <div className="max-w-md w-full rounded-2xl border border-slate-800 bg-slate-900 p-6">
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4 backdrop-blur-sm">
+            <div className="w-full max-w-md rounded-2xl border border-white/10 bg-violet-950 p-6 shadow-2xl">
               <h2 className="text-xl font-semibold text-white">Change password</h2>
 
               <form onSubmit={handleChangePassword} className="mt-6 space-y-4">
                 <div>
-                  <label htmlFor="currentPassword" className="text-sm text-slate-300">
+                  <label htmlFor="currentPassword" className="text-sm text-violet-100">
                     Current password
                   </label>
                   <input
                     id="currentPassword"
                     name="currentPassword"
                     type="password"
-                    className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-800 px-4 py-2 text-slate-100"
+                    className="mt-2 w-full rounded-xl border border-white/15 bg-white/5 px-4 py-2 text-white outline-none focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/30"
                     placeholder="••••••••"
                     required
                   />
                 </div>
 
                 <div>
-                  <label htmlFor="newPassword" className="text-sm text-slate-300">
+                  <label htmlFor="newPassword" className="text-sm text-violet-100">
                     New password
                   </label>
                   <input
                     id="newPassword"
                     name="newPassword"
                     type="password"
-                    className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-800 px-4 py-2 text-slate-100"
+                    className="mt-2 w-full rounded-xl border border-white/15 bg-white/5 px-4 py-2 text-white outline-none focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/30"
                     placeholder="••••••••"
                     required
                   />
                 </div>
 
                 <div>
-                  <label htmlFor="confirmPassword" className="text-sm text-slate-300">
+                  <label htmlFor="confirmPassword" className="text-sm text-violet-100">
                     Confirm password
                   </label>
                   <input
                     id="confirmPassword"
                     name="confirmPassword"
                     type="password"
-                    className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-800 px-4 py-2 text-slate-100"
+                    className="mt-2 w-full rounded-xl border border-white/15 bg-white/5 px-4 py-2 text-white outline-none focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/30"
                     placeholder="••••••••"
                     required
                   />
@@ -313,14 +313,14 @@ export function ProfilePage() {
                   <button
                     type="button"
                     onClick={() => setModal(null)}
-                    className="flex-1 rounded-full border border-slate-600 px-4 py-2 text-sm text-slate-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+                    className="flex-1 rounded-full border border-white/20 px-4 py-2 text-sm text-violet-100 hover:bg-white/10"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
                     disabled={passwordLoading}
-                    className="flex-1 rounded-full bg-linear-to-r from-violet-500 to-fuchsia-500 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+                    className="flex-1 rounded-full bg-linear-to-r from-violet-500 to-fuchsia-500 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
                   >
                     {passwordLoading ? "Saving…" : "Save"}
                   </button>

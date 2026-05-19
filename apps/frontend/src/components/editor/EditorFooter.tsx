@@ -1,58 +1,44 @@
 import type { FC } from "react";
 import { useState } from "react";
-import { useMutation, useQuery } from "@apollo/client/react";
+import { useMutation } from "@apollo/client/react";
 import { useNavigate } from "react-router-dom";
-import { Download, FileJson, History, Image as ImageIcon, Save, Share2, Sparkles } from "lucide-react";
+import { Download, FileJson, Image as ImageIcon, Save, Share2 } from "lucide-react";
 
-import {
-  CREATE_SHARE_LINK_MUTATION,
-  CREATE_VERSION_MUTATION,
-  EXPORT_PNG_MUTATION,
-  RESTORE_VERSION_MUTATION,
-  VERSIONS_QUERY,
-} from "@/graphql/projects.graphql";
+import { CREATE_SHARE_LINK_MUTATION } from "@/graphql/projects.graphql";
 import {
   CREATE_USER_TEMPLATE_MUTATION,
   USER_TEMPLATES_QUERY,
 } from "@/graphql/templates.graphql";
-import { serializeSceneToJson } from "@/shared/lib/canvas-engine";
+import { serializeSceneToJson, type ProjectExportFormat } from "@/shared/lib/canvas-engine";
 import { useOptionalEditorWorkspace } from "./editor-workspace-context";
 import { useToastStore } from "@/shared/stores/toast.store";
 import { BlockingOverlay } from "@/components/ui/BlockingOverlay";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { PromptDialog } from "@/components/ui/PromptDialog";
+import { focusRingOnDarkClass } from "@/shared/lib/a11y";
+import { formatDateTime } from "@/shared/lib/format-datetime";
 
-function downloadTextFile(filename: string, text: string): void {
-  const blob = new Blob([text], { type: "application/json;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
-}
+const footerBtnClass = `flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-violet-100 transition-colors hover:bg-white/10 disabled:opacity-50 ${focusRingOnDarkClass}`;
+
+const EXPORT_BUTTONS: Array<{ format: ProjectExportFormat; label: string; ariaLabel: string }> = [
+  { format: "png", label: "PNG", ariaLabel: "Export project as PNG" },
+  { format: "jpg", label: "JPG", ariaLabel: "Export project as JPG" },
+  { format: "pdf", label: "PDF", ariaLabel: "Export project as PDF" },
+  { format: "webp", label: "WEBP", ariaLabel: "Export project as WEBP" },
+  { format: "json", label: "JSON", ariaLabel: "Download scene as JSON file" },
+];
 
 export const EditorFooter: FC = () => {
   const navigate = useNavigate();
   const workspace = useOptionalEditorWorkspace();
   const [busy, setBusy] = useState<string | null>(null);
+  const [templatePromptOpen, setTemplatePromptOpen] = useState(false);
+  const [openTemplatesConfirm, setOpenTemplatesConfirm] = useState(false);
   const pushToast = useToastStore((state) => state.pushToast);
 
-  const [createVersion] = useMutation(CREATE_VERSION_MUTATION);
-  const [restoreVersion] = useMutation(RESTORE_VERSION_MUTATION);
-  const [exportPng] = useMutation(EXPORT_PNG_MUTATION);
   const [createShareLink] = useMutation(CREATE_SHARE_LINK_MUTATION);
   const [createUserTemplate] = useMutation(CREATE_USER_TEMPLATE_MUTATION, {
     refetchQueries: [{ query: USER_TEMPLATES_QUERY }],
-  });
-
-  const projectId = workspace?.projectId ?? null;
-  const {
-    data: versionsData,
-    refetch: refetchVersions,
-    loading: versionsLoading,
-    error: versionsError,
-  } = useQuery(VERSIONS_QUERY, {
-    variables: { projectId: projectId ?? "" },
-    skip: !projectId,
   });
 
   if (!workspace) {
@@ -67,14 +53,11 @@ export const EditorFooter: FC = () => {
     engine,
     projectId: pid,
     projectTitle,
-    projectWidth,
-    projectHeight,
+    projectCreatedAt,
     autosaveLabel,
     saveNow,
-    applyProjectContent,
+    exportProject,
   } = workspace;
-
-  const versions = (versionsData as { versions?: Array<{ id: string; label?: string | null; createdAt: string }> } | undefined)?.versions ?? [];
 
   const handleSave = async () => {
     setBusy("save");
@@ -92,69 +75,21 @@ export const EditorFooter: FC = () => {
     }
   };
 
-  const handleSnapshot = async () => {
-    if (!pid) return;
-    const label = window.prompt("Version label (optional)", "") ?? "";
-    setBusy("version");
+  const handleExport = async (format: ProjectExportFormat) => {
+    setBusy(format);
     try {
-      await createVersion({ variables: { projectId: pid, label: label || undefined } });
-      await refetchVersions();
-      pushToast({ title: "Snapshot created", tone: "success" });
-    } catch (e) {
-      pushToast({
-        title: "Snapshot failed",
-        message: e instanceof Error ? e.message : "Failed to create version",
-        tone: "error",
-      });
-    } finally {
-      setBusy(null);
-    }
-  };
-
-  const handleRestore = async (versionId: string) => {
-    if (!pid) return;
-    if (!window.confirm("Replace current canvas with this version?")) return;
-    setBusy("restore");
-    try {
-      const res = await restoreVersion({ variables: { projectId: pid, versionId } });
-      const content = (res.data as { restoreVersion?: { content?: unknown } })?.restoreVersion?.content;
-      applyProjectContent(content ?? null);
-      await refetchVersions();
-      pushToast({ title: "Version restored", tone: "success" });
-    } catch (e) {
-      pushToast({
-        title: "Restore failed",
-        message: e instanceof Error ? e.message : "Restore failed",
-        tone: "error",
-      });
-    } finally {
-      setBusy(null);
-    }
-  };
-
-  const handleExportJson = () => {
-    const json = serializeSceneToJson(engine.getSerializableState());
-    downloadTextFile(`${(projectTitle ?? "scene").replace(/\s+/g, "-")}.webster-scene.json`, json);
-  };
-
-  const handleExportPng = async () => {
-    if (!pid) {
-      pushToast({
-        title: "Export unavailable",
-        message: "Open a saved project to export PNG from the server.",
-        tone: "warning",
-      });
-      return;
-    }
-    setBusy("png");
-    try {
-      await saveNow();
-      const res = await exportPng({ variables: { projectId: pid } });
-      const url = (res.data as { exportPng?: { url?: string } })?.exportPng?.url;
-      if (url) {
-        window.open(url, "_blank", "noopener,noreferrer");
-        pushToast({ title: "PNG export ready", tone: "success" });
+      if (format !== "json") {
+        await saveNow();
       }
+      await exportProject(format);
+      const labels: Record<ProjectExportFormat, string> = {
+        png: "PNG",
+        jpg: "JPG",
+        pdf: "PDF",
+        webp: "WEBP",
+        json: "JSON",
+      };
+      pushToast({ title: `${labels[format]} export ready`, tone: "success" });
     } catch (e) {
       pushToast({
         title: "Export failed",
@@ -187,27 +122,21 @@ export const EditorFooter: FC = () => {
     }
   };
 
-  const handleSaveTemplate = async () => {
-    const title = window.prompt("Template title", projectTitle ?? "My template") ?? "";
-    if (!title.trim()) return;
+  const handleSaveTemplate = async (title: string) => {
     setBusy("template");
     try {
       const scene = engine.getSerializableState();
       await createUserTemplate({
         variables: {
           input: {
-            title: title.trim(),
-            width: projectWidth,
-            height: projectHeight,
+            title,
             content: JSON.parse(serializeSceneToJson(scene)) as Record<string, unknown>,
             isPublic: false,
           },
         },
       });
       pushToast({ title: "Template saved", tone: "success" });
-      if (window.confirm("Template saved. Open My templates now?")) {
-        navigate("/templates");
-      }
+      setOpenTemplatesConfirm(true);
     } catch (e) {
       pushToast({
         title: "Template save failed",
@@ -219,60 +148,46 @@ export const EditorFooter: FC = () => {
     }
   };
 
+  const busyExportLabel =
+    busy === "png"
+      ? "Exporting PNG..."
+      : busy === "jpg"
+        ? "Exporting JPG..."
+        : busy === "pdf"
+          ? "Exporting PDF..."
+          : busy === "webp"
+            ? "Exporting WEBP..."
+            : busy === "json"
+              ? "Exporting JSON..."
+              : null;
+
   return (
-    <footer className="border-t border-violet-300/20 bg-linear-to-r from-violet-950 via-violet-900 to-fuchsia-950 px-4 py-3 text-violet-100 shadow-sm">
+    <footer
+      className="border-t border-violet-300/20 bg-linear-to-r from-violet-950 via-violet-900 to-fuchsia-950 px-4 py-3 text-violet-100 shadow-sm"
+      aria-label="Editor actions"
+    >
       {busy ? (
         <BlockingOverlay
           label={
             busy === "save"
               ? "Saving project..."
-              : busy === "version"
-                ? "Creating snapshot..."
-                : busy === "restore"
-                  ? "Restoring version..."
-                  : busy === "png"
-                    ? "Exporting PNG..."
-                    : busy === "share"
-                      ? "Creating share link..."
-                      : busy === "template"
-                        ? "Saving template..."
-                        : "Working..."
+              : busyExportLabel
+                ? busyExportLabel
+                : busy === "share"
+                  ? "Creating share link..."
+                  : busy === "template"
+                    ? "Saving template..."
+                    : "Working..."
           }
         />
       ) : null}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex min-w-0 flex-col gap-1 text-xs text-violet-200/80">
           <div className="truncate font-medium text-white">{projectTitle ?? "Project"}</div>
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-            <span>
-              {autosaveLabel || (busy ? `${busy}…` : versionsLoading ? "Loading snapshots…" : "Ready")}
-            </span>
-            {pid ? (
-              <span className="flex items-center gap-1 text-slate-500">
-                <History size={12} />
-                {versions.length} snapshot{versions.length === 1 ? "" : "s"}
-              </span>
-            ) : null}
-          </div>
-          {versionsError ? (
-            <div className="text-[11px] text-rose-500">Failed to load snapshots.</div>
+          {projectCreatedAt ? (
+            <div className="text-[11px] text-violet-300/90">Created {formatDateTime(projectCreatedAt)}</div>
           ) : null}
-          {pid && versions.length > 0 ? (
-            <div className="flex max-w-full flex-wrap gap-1 pt-1">
-              {versions.slice(0, 8).map((v) => (
-                <button
-                  key={v.id}
-                  type="button"
-                  disabled={Boolean(busy)}
-                  onClick={() => void handleRestore(v.id)}
-                  className="rounded border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] text-slate-700 hover:bg-slate-100 disabled:opacity-50"
-                  title={v.createdAt}
-                >
-                  {v.label || new Date(v.createdAt).toLocaleString()}
-                </button>
-              ))}
-            </div>
-          ) : null}
+          <span>{autosaveLabel || (busy ? `${busy}…` : "Ready")}</span>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
@@ -280,58 +195,75 @@ export const EditorFooter: FC = () => {
             type="button"
             disabled={Boolean(busy)}
             onClick={() => void handleSave()}
-            className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-violet-100 transition-colors hover:bg-white/10 disabled:opacity-50"
+            className={footerBtnClass}
+            aria-label="Save project now"
           >
-            <Save size={16} />
+            <Save size={16} aria-hidden />
             Save now
           </button>
-          <button
-            type="button"
-            disabled={!pid || Boolean(busy)}
-            onClick={() => void handleSnapshot()}
-            className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-violet-100 transition-colors hover:bg-white/10 disabled:opacity-50"
-          >
-            <Sparkles size={16} />
-            Snapshot
-          </button>
-          <button
-            type="button"
-            disabled={Boolean(busy)}
-            onClick={handleExportJson}
-            className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-violet-100 transition-colors hover:bg-white/10 disabled:opacity-50"
-          >
-            <FileJson size={16} />
-            JSON
-          </button>
+          {EXPORT_BUTTONS.map(({ format, label, ariaLabel }) => (
+            <button
+              key={format}
+              type="button"
+              disabled={Boolean(busy)}
+              onClick={() => void handleExport(format)}
+              className={footerBtnClass}
+              aria-label={ariaLabel}
+            >
+              {format === "json" ? <FileJson size={16} aria-hidden /> : <ImageIcon size={16} aria-hidden />}
+              {label}
+            </button>
+          ))}
           <button
             type="button"
             disabled={Boolean(busy)}
-            onClick={() => void handleExportPng()}
-            className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-violet-100 transition-colors hover:bg-white/10 disabled:opacity-50"
+            onClick={() => setTemplatePromptOpen(true)}
+            className={footerBtnClass}
+            aria-label="Save canvas as user template"
           >
-            <ImageIcon size={16} />
-            PNG
-          </button>
-          <button
-            type="button"
-            disabled={Boolean(busy)}
-            onClick={() => void handleSaveTemplate()}
-            className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-violet-100 transition-colors hover:bg-white/10 disabled:opacity-50"
-          >
-            <Download size={16} />
-            Template
+            <Download size={16} aria-hidden />
+            Save as template
           </button>
           <button
             type="button"
             disabled={!pid || Boolean(busy)}
             onClick={() => void handleShare()}
-            className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-violet-100 transition-colors hover:bg-white/10 disabled:opacity-50"
+            className={footerBtnClass}
+            aria-label="Create and copy share link"
           >
-            <Share2 size={16} />
+            <Share2 size={16} aria-hidden />
             Share
           </button>
         </div>
       </div>
+
+      <PromptDialog
+        open={templatePromptOpen}
+        title="Save as template"
+        description="Reuse this layout when starting new projects."
+        label="Template title"
+        defaultValue={projectTitle ?? "My template"}
+        confirmLabel="Save"
+        busy={busy === "template"}
+        onCancel={() => setTemplatePromptOpen(false)}
+        onConfirm={(title) => {
+          setTemplatePromptOpen(false);
+          void handleSaveTemplate(title);
+        }}
+      />
+
+      <ConfirmDialog
+        open={openTemplatesConfirm}
+        title="Template saved"
+        description="Open My templates to create a project from it?"
+        confirmLabel="Open templates"
+        confirmTone="primary"
+        onCancel={() => setOpenTemplatesConfirm(false)}
+        onConfirm={() => {
+          setOpenTemplatesConfirm(false);
+          navigate("/templates");
+        }}
+      />
     </footer>
   );
 };

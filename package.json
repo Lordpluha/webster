@@ -10,6 +10,7 @@
     "build": "pnpm --filter @webster/backend build && pnpm --filter @webster/frontend build",
     "lint": "pnpm --filter @webster/backend lint && pnpm --filter @webster/frontend lint",
     "test": "pnpm --filter @webster/backend test && pnpm --filter @webster/frontend test",
+    "test:e2e": "pnpm --filter @webster/frontend test:e2e",
     "docker:up": "docker compose up --build",
     "docker:down": "docker compose down -v",
     "docker:logs": "docker compose logs -f"

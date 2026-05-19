@@ -1,5 +1,4 @@
 import type { ReactNode } from "react";
-import { Link } from "react-router-dom";
 
 type AuthCardProps = {
   title: string;
@@ -35,4 +34,12 @@ export function authPrimaryButtonClass(disabled?: boolean) {
 
 export function authLinkClass() {
   return "font-semibold text-violet-600 hover:text-fuchsia-600";
+}
+
+export function authAlertErrorClass() {
+  return "mb-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800";
+}
+
+export function authAlertSuccessClass() {
+  return "rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800";
 }

@@ -44,7 +44,7 @@ export class AuthService {
 
   // ─── Register ────────────────────────────────────────
 
-  async register(input: RegisterDto): Promise<TokenPair> {
+  async register(input: RegisterDto): Promise<MessageResponse> {
     const existing = await this.usersService.findByEmail(input.email);
     if (existing) {
       throw new ConflictException("User with this email already exists");
@@ -59,10 +59,10 @@ export class AuthService {
       lastName: input.lastName,
     });
 
-    // Send verification email (fire-and-forget)
+    // Send verification email (fire-and-forget). Session starts only after verify + login.
     this.sendVerificationEmail(user.id, user.email).catch(() => {});
 
-    return this.generateTokens(user.id);
+    return { message: "Registration successful. Please check your email to verify your account." };
   }
 
   // ─── Login ───────────────────────────────────────────
@@ -84,6 +84,10 @@ export class AuthService {
     const isPasswordValid = await verify(user.passwordHash, password);
     if (!isPasswordValid) {
       throw new UnauthorizedException("Invalid email or password");
+    }
+
+    if (!user.isEmailVerified) {
+      throw new UnauthorizedException("Please verify your email before signing in");
     }
 
     if (user.isTwoFactorEnabled) {

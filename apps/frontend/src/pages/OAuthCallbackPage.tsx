@@ -21,9 +21,7 @@ export function OAuthCallbackPage() {
     return null;
   }, [providerParam]);
 
-  const [oauthLogin, { loading }] = useMutation(OAUTH_LOGIN_MUTATION, {
-    refetchQueries: [{ query: GET_CURRENT_USER }],
-  });
+  const [oauthLogin, { loading }] = useMutation(OAUTH_LOGIN_MUTATION);
 
   useEffect(() => {
     if (!code || !provider) {
@@ -41,6 +39,8 @@ export function OAuthCallbackPage() {
               redirectUri: `${window.location.origin}/oauth/callback`,
             },
           },
+          refetchQueries: [{ query: GET_CURRENT_USER }],
+          awaitRefetchQueries: true,
         });
         if (!cancelled) {
           setStatus("success");

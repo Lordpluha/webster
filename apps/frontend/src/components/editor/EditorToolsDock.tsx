@@ -14,7 +14,10 @@ import {
 } from "lucide-react";
 
 import { ENGINE_SHAPE_TOOLS, type ToolName } from "@/shared/lib/canvas-engine";
+import { focusRingOnLightClass } from "@/shared/lib/a11y";
 import { useOptionalEditorWorkspace } from "./editor-workspace-context";
+
+const dockBtnBase = `inline-flex h-10 w-10 items-center justify-center rounded-xl border transition ${focusRingOnLightClass}`;
 
 const PRIMARY_DOCK_TOOLS: Array<{ id: ToolName; label: string; Icon: FC<{ className?: string }> }> = [
   { id: "select", label: "Select", Icon: MousePointer2 },
@@ -72,7 +75,11 @@ export const EditorToolsDock: FC = () => {
       ref={rootRef}
       className="pointer-events-none absolute bottom-4 left-1/2 z-30 flex -translate-x-1/2 justify-center px-2"
     >
-      <div className="pointer-events-auto inline-flex items-center gap-1 rounded-2xl border border-violet-200/80 bg-white/95 px-2 py-2 shadow-xl shadow-violet-300/25 backdrop-blur-sm">
+      <div
+        role="toolbar"
+        aria-label="Canvas tools"
+        className="pointer-events-auto inline-flex items-center gap-1 rounded-2xl border border-violet-200/80 bg-white/95 px-2 py-2 shadow-xl shadow-violet-300/25 backdrop-blur-sm"
+      >
         {PRIMARY_DOCK_TOOLS.map(({ id, label, Icon }) => {
           const isActive = activeTool === id;
           return (
@@ -80,17 +87,19 @@ export const EditorToolsDock: FC = () => {
               key={id}
               type="button"
               title={label}
+              aria-label={label}
+              aria-pressed={isActive}
               onClick={() => {
                 setShapesOpen(false);
                 engine.setTool(id);
               }}
               className={
                 isActive
-                    ? "inline-flex h-10 w-10 items-center justify-center rounded-xl border border-violet-500 bg-linear-to-br from-violet-600 to-fuchsia-500 text-white shadow-md"
-                    : "inline-flex h-10 w-10 items-center justify-center rounded-xl border border-transparent text-violet-800 hover:bg-violet-100"
+                    ? `${dockBtnBase} border-violet-500 bg-linear-to-br from-violet-600 to-fuchsia-500 text-white shadow-md`
+                    : `${dockBtnBase} border-transparent text-violet-800 hover:bg-violet-100`
               }
             >
-              <Icon className="h-5 w-5" />
+              <Icon className="h-5 w-5" aria-hidden />
             </button>
           );
         })}
@@ -101,22 +110,26 @@ export const EditorToolsDock: FC = () => {
           <button
             type="button"
             title="Shapes"
+            aria-label="Shapes menu"
+            aria-expanded={shapesOpen}
+            aria-haspopup="menu"
             onClick={() => setShapesOpen((o) => !o)}
             className={
               shapeToolActive && !shapesOpen
-                ? "inline-flex h-10 items-center gap-1 rounded-xl border border-blue-500 bg-blue-600 px-2 text-white"
+                ? `inline-flex h-10 items-center gap-1 rounded-xl border border-blue-500 bg-blue-600 px-2 text-white ${focusRingOnLightClass}`
                 : shapesOpen
-                  ? "inline-flex h-10 items-center gap-1 rounded-xl border border-slate-400 bg-slate-100 px-2 text-slate-900"
-                  : "inline-flex h-10 items-center gap-1 rounded-xl border border-transparent px-2 text-slate-700 hover:bg-slate-100"
+                  ? `inline-flex h-10 items-center gap-1 rounded-xl border border-slate-400 bg-slate-100 px-2 text-slate-900 ${focusRingOnLightClass}`
+                  : `inline-flex h-10 items-center gap-1 rounded-xl border border-transparent px-2 text-slate-700 hover:bg-slate-100 ${focusRingOnLightClass}`
             }
           >
-            <Shapes className="h-5 w-5" />
-            <ChevronDown className={`h-4 w-4 transition-transform ${shapesOpen ? "rotate-180" : ""}`} />
+            <Shapes className="h-5 w-5" aria-hidden />
+            <ChevronDown className={`h-4 w-4 transition-transform ${shapesOpen ? "rotate-180" : ""}`} aria-hidden />
           </button>
 
           {shapesOpen ? (
             <div
               role="menu"
+              aria-label="Shape tools"
               className="absolute bottom-full left-1/2 mb-2 min-w-44 -translate-x-1/2 rounded-xl border border-slate-200 bg-white py-1 shadow-xl"
             >
               {ENGINE_SHAPE_TOOLS.map((tool) => {
@@ -127,17 +140,18 @@ export const EditorToolsDock: FC = () => {
                     key={tool.id}
                     type="button"
                     role="menuitem"
+                    aria-label={tool.label}
                     className={
                       isActive
-                        ? "flex w-full items-center gap-2 bg-blue-50 px-3 py-2 text-left text-sm font-medium text-blue-800"
-                        : "flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-800 hover:bg-slate-50"
+                        ? `flex w-full items-center gap-2 bg-blue-50 px-3 py-2 text-left text-sm font-medium text-blue-800 ${focusRingOnLightClass}`
+                        : `flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-800 hover:bg-slate-50 ${focusRingOnLightClass}`
                     }
                     onClick={() => {
                       engine.setTool(tool.id);
                       setShapesOpen(false);
                     }}
                   >
-                    <Icon className="h-4 w-4 shrink-0" />
+                    <Icon className="h-4 w-4 shrink-0" aria-hidden />
                     {tool.label}
                   </button>
                 );

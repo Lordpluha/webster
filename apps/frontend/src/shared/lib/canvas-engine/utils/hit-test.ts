@@ -165,6 +165,21 @@ export function unionRects(rects: Rect[]): Rect | null {
   return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
 }
 
+export function getSceneContentBounds(scene: {
+  nodes: Record<string, SceneNode>;
+  nodeOrder: string[];
+}): Rect | null {
+  const rects: Rect[] = [];
+  for (const id of scene.nodeOrder) {
+    const node = scene.nodes[id];
+    if (!node || node.data?.hidden) {
+      continue;
+    }
+    rects.push(getNodeWorldBounds(node));
+  }
+  return unionRects(rects);
+}
+
 export function getSelectionWorldBounds(
   scene: { nodes: Record<string, SceneNode> },
   nodeIds: string[],

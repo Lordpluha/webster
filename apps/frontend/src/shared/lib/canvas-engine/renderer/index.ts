@@ -2,7 +2,8 @@ import type { CanvasEngine } from "../core/create-engine";
 import type { Point, Rect } from "../core/types";
 import type { SceneNode } from "../scene/scene-node";
 import { getNodeWorldBounds } from "../utils/mat2d";
-import { getSelectionWorldBounds } from "../utils/hit-test";
+import { getSceneContentBounds, getSelectionWorldBounds } from "../utils/hit-test";
+import { getNodeSelectionOutlineWorld } from "../utils/selection-handles";
 
 // Per-frame cache: avoids recomputing the local→world matrix multiple times per node per frame.
 const frameWorldBoundsCache = new WeakMap<SceneNode, Rect>();
@@ -49,6 +50,8 @@ const DIRTY_NODE_THRESHOLD = 2;
 const DIRTY_PADDING = 6;
 const MIN_CAMERA_ZOOM = 0.25;
 const MAX_CAMERA_ZOOM = 4;
+const EXPORT_PADDING = 40;
+const EXPORT_PIXEL_RATIO = 2;
 
 export class CanvasRenderer {
   private readonly canvas: HTMLCanvasElement;
@@ -65,6 +68,7 @@ export class CanvasRenderer {
 
   private latestStats: RenderStats = { mode: "full-redraw", frameTimeMs: 0, renderedNodes: 0 };
   private lastNodeBounds = new Map<string, Rect>();
+  private exportMode = false;
   /** Loaded bitmaps / external images keyed by `data.src`. */
   private readonly imageElementsBySrc = new Map<string, HTMLImageElement>();
   private readonly imageLoadFailedSrc = new Set<string>();
@@ -140,6 +144,69 @@ export class CanvasRenderer {
       x: (point.x - this.camera.x) / this.camera.zoom,
       y: (point.y - this.camera.y) / this.camera.zoom,
     };
+  }
+
+  /** Renders all visible scene nodes into an offscreen canvas (no selection UI). */
+  async exportToCanvas(): Promise<HTMLCanvasElement | null> {
+    const serializable = this.engine.getSerializableState();
+    const nodes = this.getSortedNodes(serializable.nodes, serializable.nodeOrder).filter(
+      (node) => !node.data?.hidden,
+    );
+    if (nodes.length === 0) {
+      return null;
+    }
+
+    const contentBounds = getSceneContentBounds(serializable);
+    if (!contentBounds || contentBounds.width < 1 || contentBounds.height < 1) {
+      return null;
+    }
+
+    await this.preloadImagesForNodes(nodes);
+
+    const exportWidth = Math.ceil(contentBounds.width + EXPORT_PADDING * 2);
+    const exportHeight = Math.ceil(contentBounds.height + EXPORT_PADDING * 2);
+
+    const exportCanvas = document.createElement("canvas");
+    exportCanvas.width = Math.max(1, Math.floor(exportWidth * EXPORT_PIXEL_RATIO));
+    exportCanvas.height = Math.max(1, Math.floor(exportHeight * EXPORT_PIXEL_RATIO));
+
+    const exportCtx = exportCanvas.getContext("2d");
+    if (!exportCtx) {
+      return null;
+    }
+
+    const savedCtx = this.ctx;
+    const savedCamera = { ...this.camera };
+    const savedViewport = { ...this.viewport };
+    const savedExportMode = this.exportMode;
+
+    try {
+      this.exportMode = true;
+      this.ctx = exportCtx;
+      this.viewport = { width: exportWidth, height: exportHeight, dpr: EXPORT_PIXEL_RATIO };
+      this.camera = {
+        x: EXPORT_PADDING - contentBounds.x,
+        y: EXPORT_PADDING - contentBounds.y,
+        zoom: 1,
+      };
+
+      exportCtx.setTransform(EXPORT_PIXEL_RATIO, 0, 0, EXPORT_PIXEL_RATIO, 0, 0);
+      exportCtx.fillStyle = "#ffffff";
+      exportCtx.fillRect(0, 0, exportWidth, exportHeight);
+
+      this.ctx.save();
+      this.applyCameraTransform();
+      this.drawNodes(nodes);
+      this.ctx.restore();
+
+      return exportCanvas;
+    } finally {
+      this.ctx = savedCtx;
+      this.camera = savedCamera;
+      this.viewport = savedViewport;
+      this.exportMode = savedExportMode;
+      this.ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+    }
   }
 
   render(preferredMode?: RenderMode): RenderStats {
@@ -303,31 +370,35 @@ export class CanvasRenderer {
       this.ctx.clip();
     }
 
-    // Compute screen viewport in world coordinates for culling.
-    const { x: cx, y: cy, zoom } = this.camera;
-    const vw = this.viewport.width;
-    const vh = this.viewport.height;
-    // Screen corners → world coords: wx = (sx - cx) / zoom
-    const cullLeft   = (-cx) / zoom - 4;
-    const cullTop    = (-cy) / zoom - 4;
-    const cullRight  = (vw - cx) / zoom + 4;
-    const cullBottom = (vh - cy) / zoom + 4;
+    if (!this.exportMode) {
+      // Compute screen viewport in world coordinates for culling.
+      const { x: cx, y: cy, zoom } = this.camera;
+      const vw = this.viewport.width;
+      const vh = this.viewport.height;
+      const cullLeft = (-cx) / zoom - 4;
+      const cullTop = (-cy) / zoom - 4;
+      const cullRight = (vw - cx) / zoom + 4;
+      const cullBottom = (vh - cy) / zoom + 4;
 
-    for (const node of nodes) {
-      if (node.data?.hidden) {
-        continue;
+      for (const node of nodes) {
+        if (node.data?.hidden) {
+          continue;
+        }
+        const wb = getCachedWorldBounds(node);
+        if (
+          wb.x + wb.width < cullLeft ||
+          wb.x > cullRight ||
+          wb.y + wb.height < cullTop ||
+          wb.y > cullBottom
+        ) {
+          continue;
+        }
+        this.drawNode(node);
       }
-      // Viewport cull: skip nodes whose world AABB is entirely outside the screen.
-      const wb = getCachedWorldBounds(node);
-      if (
-        wb.x + wb.width  < cullLeft  ||
-        wb.x             > cullRight ||
-        wb.y + wb.height < cullTop   ||
-        wb.y             > cullBottom
-      ) {
-        continue;
+    } else {
+      for (const node of nodes) {
+        this.drawNode(node);
       }
-      this.drawNode(node);
     }
 
     if (clipRegion) {
@@ -463,10 +534,29 @@ export class CanvasRenderer {
         break;
       }
       case "text": {
-        const fontSize = Math.max(8, Math.floor(height * 0.72));
-        this.ctx.font = `${fontSize}px sans-serif`;
+        const fontSize =
+          typeof node.data?.fontSize === "number" && Number.isFinite(node.data.fontSize)
+            ? Math.max(8, Math.min(256, Math.round(node.data.fontSize)))
+            : Math.max(8, Math.floor(height * 0.72));
+        const fontFamily =
+          typeof node.data?.fontFamily === "string" && node.data.fontFamily.length > 0
+            ? node.data.fontFamily
+            : "sans-serif";
+        const text = node.data?.text ?? "Text";
+
+        this.ctx.font = `${fontSize}px ${fontFamily}`;
         this.ctx.textBaseline = "top";
-        this.ctx.fillText(node.data?.text ?? "Text", x, y);
+        this.ctx.lineJoin = "round";
+        this.ctx.lineCap = "round";
+        this.ctx.fillStyle = fill;
+        this.ctx.strokeStyle = stroke;
+
+        if (strokeWidth > 0) {
+          this.ctx.lineWidth = strokeWidth;
+          this.ctx.strokeText(text, x, y);
+        }
+
+        this.ctx.fillText(text, x, y);
         break;
       }
       case "path": {
@@ -513,10 +603,24 @@ export class CanvasRenderer {
       this.ctx.clip();
     }
 
-    const selectionBounds = getSelectionWorldBounds({ nodes }, selectedNodeIds);
-    if (selectionBounds) {
-      const { x, y, width, height } = selectionBounds;
-      this.ctx.strokeRect(x - 4, y - 4, width + 8, height + 8);
+    if (selectedNodeIds.length === 1) {
+      const node = nodes[selectedNodeIds[0]];
+      if (node) {
+        const corners = getNodeSelectionOutlineWorld(node);
+        this.ctx.beginPath();
+        this.ctx.moveTo(corners[0].x, corners[0].y);
+        for (let i = 1; i < corners.length; i += 1) {
+          this.ctx.lineTo(corners[i].x, corners[i].y);
+        }
+        this.ctx.closePath();
+        this.ctx.stroke();
+      }
+    } else {
+      const selectionBounds = getSelectionWorldBounds({ nodes }, selectedNodeIds);
+      if (selectionBounds) {
+        const { x, y, width, height } = selectionBounds;
+        this.ctx.strokeRect(x - 4, y - 4, width + 8, height + 8);
+      }
     }
 
     this.ctx.restore();
@@ -536,6 +640,40 @@ export class CanvasRenderer {
   private applyCameraTransform(): void {
     this.ctx.translate(this.camera.x, this.camera.y);
     this.ctx.scale(this.camera.zoom, this.camera.zoom);
+  }
+
+  private async preloadImagesForNodes(nodes: SceneNode[]): Promise<void> {
+    const sources = new Set<string>();
+    for (const node of nodes) {
+      if (node.type === "image" && typeof node.data?.src === "string" && node.data.src) {
+        sources.add(node.data.src);
+      }
+    }
+
+    await Promise.all(
+      [...sources].map(
+        (src) =>
+          new Promise<void>((resolve) => {
+            let img = this.imageElementsBySrc.get(src);
+            if (img?.complete && img.naturalWidth > 0) {
+              resolve();
+              return;
+            }
+            if (!img) {
+              img = new Image();
+              img.decoding = "async";
+              img.crossOrigin = "anonymous";
+              this.imageElementsBySrc.set(src, img);
+            }
+            img.onload = () => resolve();
+            img.onerror = () => {
+              this.imageLoadFailedSrc.add(src);
+              resolve();
+            };
+            img.src = src;
+          }),
+      ),
+    );
   }
 }
 

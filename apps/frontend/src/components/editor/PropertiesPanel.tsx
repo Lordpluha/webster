@@ -3,7 +3,13 @@ import { useEffect, useMemo, useReducer } from "react";
 import { X, ChevronDown } from "lucide-react";
 
 import type { SceneNode } from "@/shared/lib/canvas-engine";
-import { ColorInput, NumberInput, SelectInput, SliderInput } from "@/components/ui/controls";
+import { ColorInput, FontSizeInput, NumberInput, SelectInput, SliderInput } from "@/components/ui/controls";
+import {
+  TEXT_FONT_FAMILIES,
+  applyTextStyleToNode,
+  getTextFontFamily,
+  getTextFontSize,
+} from "@/shared/lib/canvas-engine/utils/text-style";
 import { useOptionalEditorWorkspace } from "./editor-workspace-context";
 
 type PanelProps = Record<string, unknown>;
@@ -23,8 +29,8 @@ function nodeToPanel(node: SceneNode): PanelProps {
   if (node.type === "text") {
     return {
       ...base,
-      fontSize: Math.max(8, Math.floor(node.bounds.height * 0.72)),
-      fontFamily: "sans-serif",
+      fontSize: getTextFontSize(node),
+      fontFamily: getTextFontFamily(node),
       textColor: node.style.fill ?? "#0f172a",
     };
   }
@@ -156,16 +162,23 @@ export const PropertiesPanel: FC = () => {
   };
 
   return (
-    <aside className="z-40 flex w-full flex-col overflow-hidden border-l border-violet-200/80 bg-white/95 shadow-lg backdrop-blur-md sm:relative sm:top-0 sm:h-full sm:w-80">
+    <aside
+      role="complementary"
+      aria-labelledby="editor-properties-heading"
+      className="z-40 flex w-full flex-col overflow-hidden border-l border-violet-200/80 bg-white/95 shadow-lg backdrop-blur-md sm:relative sm:top-0 sm:h-full sm:w-80"
+    >
       <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
-        <h3 className="font-semibold text-slate-900">Properties</h3>
+        <h3 id="editor-properties-heading" className="font-semibold text-slate-900">
+          Properties
+        </h3>
         <button
           type="button"
           onClick={() => engine.setSelection([])}
           className="rounded-lg p-2 transition-colors hover:bg-slate-100"
           title="Close (Esc)"
+          aria-label="Close properties panel"
         >
-          <X size={18} className="text-slate-700" />
+          <X size={18} className="text-slate-700" aria-hidden />
         </button>
       </div>
 
@@ -327,34 +340,20 @@ export const PropertiesPanel: FC = () => {
             </h4>
             <div className="space-y-3">
               <SelectInput
-                label="Font (preview)"
+                label="Font"
                 value={(props.fontFamily as string) ?? "sans-serif"}
-                onChange={() => undefined}
-                options={[
-                  { value: "sans-serif", label: "Sans-serif" },
-                  { value: "serif", label: "Serif" },
-                  { value: "monospace", label: "Monospace" },
-                ]}
-              />
-              <NumberInput
-                label="Font size"
-                value={props.fontSize as number}
-                step={1}
                 onChange={(e) => {
-                  const n = readFiniteNumberFromInput(e.target.value);
-                  if (n === null) return;
-                  const fs = Math.max(8, n);
-                  engine.updateNode(singleId, (prev) => ({
-                    ...prev,
-                    bounds: {
-                      ...prev.bounds,
-                      height: Math.max(fs + 4, prev.bounds.height),
-                    },
-                  }));
+                  engine.updateNode(singleId, (prev) =>
+                    applyTextStyleToNode(prev, { fontFamily: e.target.value }),
+                  );
                 }}
-                min={8}
-                max={128}
-                unit="px"
+                options={[...TEXT_FONT_FAMILIES]}
+              />
+              <FontSizeInput
+                value={props.fontSize as number}
+                onChange={(fontSize) => {
+                  engine.updateNode(singleId, (prev) => applyTextStyleToNode(prev, { fontSize }));
+                }}
               />
               <ColorInput
                 label="Text color"

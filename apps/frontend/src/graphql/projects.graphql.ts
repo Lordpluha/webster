@@ -6,9 +6,8 @@ export const PROJECTS_QUERY = gql`
       items {
         id
         title
-        width
-        height
         thumbnailUrl
+        createdAt
         updatedAt
       }
       total
@@ -39,9 +38,8 @@ export const PROJECT_QUERY = gql`
     project(id: $id) {
       id
       title
-      width
-      height
       content
+      createdAt
       updatedAt
     }
   }

@@ -37,12 +37,24 @@ export {
 } from "./utils/mat2d";
 export {
   getNodeDefaultPivotWorld,
+  getSceneContentBounds,
   getSelectionWorldBounds,
   hitTestNodeAtWorldPoint,
   pickTopMostNodeAtWorldPoint,
   unionRects,
   worldPointToNodeLocalPoint,
 } from "./utils/hit-test";
+export {
+  downloadProjectExport,
+} from "./export/project-export";
+export type { ProjectExportFormat } from "./export/project-export";
+export {
+  findResizeHandleAtWorldPoint,
+  getNodeSelectionOutlineWorld,
+  getResizeHandlesWorld,
+  getRotateHandleWorld,
+  type ResizeHandleId,
+} from "./utils/selection-handles";
 export {
   SceneModel,
   createImmutableSceneSnapshot,

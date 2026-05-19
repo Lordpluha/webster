@@ -59,7 +59,7 @@ export class MailService {
 
   async sendMagicLink(email: string, token: string) {
     const baseUrl = this.config.get<string>("FRONTEND_URL", "http://localhost:5173");
-    const link = `${baseUrl}/auth/magic?token=${encodeURIComponent(token)}`;
+    const link = `${baseUrl}/magic-link?token=${encodeURIComponent(token)}`;
 
     await this.send(
       email,
