@@ -304,15 +304,20 @@ export const PropertiesPanel: FC = () => {
                     void (async () => {
                       try {
                         const projectId = workspace?.projectId;
-                        let src: string;
-                        if (projectId) {
-                          const { uploadProjectImage } = await import("@/shared/lib/upload-project-image");
-                          src = await uploadProjectImage(file, projectId);
-                        } else {
-                          const { readFileAsDataUrl } = await import("@/shared/lib/upload-project-image");
-                          src = await readFileAsDataUrl(file);
+                        const {
+                          readFileAsDataUrl,
+                          uploadProjectImage,
+                        } = await import("@/shared/lib/upload-project-image");
+                        const previewSrc = projectId
+                          ? URL.createObjectURL(file)
+                          : await readFileAsDataUrl(file);
+                        assignImageSrc(previewSrc);
+                        if (!projectId) return;
+                        const serverSrc = await uploadProjectImage(file, projectId);
+                        assignImageSrc(serverSrc);
+                        if (previewSrc.startsWith("blob:")) {
+                          URL.revokeObjectURL(previewSrc);
                         }
-                        assignImageSrc(src);
                       } catch {
                         /* ignore — user can retry */
                       }
@@ -320,7 +325,9 @@ export const PropertiesPanel: FC = () => {
                   }}
                 />
               </label>
-              <p className="text-xs text-slate-500">Or drop an image file onto the canvas (replaces this node if selected).</p>
+              <p className="text-xs text-slate-500">
+                Upload replaces this image. Drop files onto the canvas to add more images.
+              </p>
             </div>
           </section>
         ) : null}

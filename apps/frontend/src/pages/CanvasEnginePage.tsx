@@ -159,6 +159,7 @@ export function CanvasEnginePage() {
   const rendererRef = useRef<CanvasRenderer | null>(null);
   const dragStateRef = useRef<DragState | null>(null);
   const autosaveTimerRef = useRef<number | null>(null);
+  const pendingImageUploadsRef = useRef(0);
   const lastSentJsonRef = useRef<string>("");
   const hydratedEditorProjectIdRef = useRef<string | null>(null);
 
@@ -396,11 +397,13 @@ export function CanvasEnginePage() {
       const content = JSON.parse(json) as {
         nodes?: Record<string, { type?: string; data?: { src?: string } }>;
       };
-      const hasEmbeddedImage = Object.values(content.nodes ?? {}).some(
-        (node) => node.type === "image" && node.data?.src?.startsWith("data:"),
+      const hasTemporaryImage = Object.values(content.nodes ?? {}).some(
+        (node) =>
+          node.type === "image" &&
+          (node.data?.src?.startsWith("data:") || node.data?.src?.startsWith("blob:")),
       );
-      if (hasEmbeddedImage) {
-        setAutosaveLabel("Re-upload images to save");
+      if (pendingImageUploadsRef.current > 0 || hasTemporaryImage) {
+        setAutosaveLabel("Uploading image…");
         return;
       }
       setAutosaveLabel("Saving…");
@@ -1445,54 +1448,26 @@ export function CanvasEnginePage() {
       const worldPoint = renderer.screenToWorld(point);
 
       const file = files[0]!;
-      let src: string;
+      const {
+        fitImageBounds,
+        loadImageDimensions,
+        readFileAsDataUrl,
+        uploadProjectImage,
+      } = await import("@/shared/lib/upload-project-image");
+
+      const canUpload = Boolean(projectId && !standaloneMode);
+      const previewSrc = canUpload ? URL.createObjectURL(file) : await readFileAsDataUrl(file);
+
+      let natural: { width: number; height: number };
       try {
-        if (projectId && !standaloneMode) {
-          const { uploadProjectImage } = await import("@/shared/lib/upload-project-image");
-          src = await uploadProjectImage(file, projectId);
-        } else {
-          const { readFileAsDataUrl } = await import("@/shared/lib/upload-project-image");
-          src = await readFileAsDataUrl(file);
-        }
+        natural = await loadImageDimensions(previewSrc);
       } catch {
+        if (canUpload) URL.revokeObjectURL(previewSrc);
         setAutosaveLabel("Upload failed");
         return;
       }
 
-      const rt = engine.getRuntimeSnapshot();
-      const one = rt.selectedNodeIds.length === 1 ? rt.selectedNodeIds[0] : null;
-      const sel = one ? engine.getSerializableState().nodes[one] : null;
-
-      if (sel?.type === "image") {
-        engine.updateNode(one!, (prev) => ({
-          ...prev,
-          data: { ...(prev.data ?? {}), src },
-        }));
-        engine.setSelection([one!]);
-        return;
-      }
-
-      const img = new Image();
-      await new Promise<void>((resolve, reject) => {
-        img.onload = () => resolve();
-        img.onerror = () => reject(new Error("img"));
-        img.src = src;
-      }).catch(() => undefined);
-
-      const nw = img.naturalWidth || 320;
-      const nh = img.naturalHeight || 240;
-      const maxSide = 480;
-      let w = nw;
-      let h = nh;
-      if (w > maxSide) {
-        h = (h / w) * maxSide;
-        w = maxSide;
-      }
-      if (h > maxSide) {
-        w = (w / h) * maxSide;
-        h = maxSide;
-      }
-
+      const { width: w, height: h } = fitImageBounds(natural.width, natural.height);
       const id = `image-${Date.now()}`;
       engine.addNode({
         id,
@@ -1501,9 +1476,30 @@ export function CanvasEnginePage() {
         bounds: { x: worldPoint.x - w / 2, y: worldPoint.y - h / 2, width: w, height: h },
         transform: createIdentityTransform(),
         style: { fill: "#e2e8f0", stroke: "#1e293b", strokeWidth: 1, opacity: 1 },
-        data: { src },
+        data: { src: previewSrc },
       });
       engine.setSelection([id]);
+
+      if (!canUpload) {
+        return;
+      }
+
+      pendingImageUploadsRef.current += 1;
+      setAutosaveLabel("Uploading image…");
+      void uploadProjectImage(file, projectId!)
+        .then((serverSrc) => {
+          engine.updateNode(id, (prev) => ({
+            ...prev,
+            data: { ...(prev.data ?? {}), src: serverSrc },
+          }));
+          URL.revokeObjectURL(previewSrc);
+        })
+        .catch(() => {
+          setAutosaveLabel("Upload failed");
+        })
+        .finally(() => {
+          pendingImageUploadsRef.current = Math.max(0, pendingImageUploadsRef.current - 1);
+        });
     },
     [engine, projectId, standaloneMode],
   );

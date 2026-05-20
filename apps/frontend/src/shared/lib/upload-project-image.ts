@@ -35,6 +35,43 @@ export async function uploadProjectImage(file: File, projectId: string): Promise
   return payload.url;
 }
 
+export function isTemporaryImageSrc(src: string | undefined): boolean {
+  if (!src) return false;
+  return src.startsWith("data:") || src.startsWith("blob:");
+}
+
+export function loadImageDimensions(src: string): Promise<{ width: number; height: number }> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      resolve({
+        width: img.naturalWidth || 320,
+        height: img.naturalHeight || 240,
+      });
+    };
+    img.onerror = () => reject(new Error("Failed to load image"));
+    img.src = src;
+  });
+}
+
+export function fitImageBounds(
+  naturalWidth: number,
+  naturalHeight: number,
+  maxSide = 480,
+): { width: number; height: number } {
+  let w = naturalWidth;
+  let h = naturalHeight;
+  if (w > maxSide) {
+    h = (h / w) * maxSide;
+    w = maxSide;
+  }
+  if (h > maxSide) {
+    w = (w / h) * maxSide;
+    h = maxSide;
+  }
+  return { width: w, height: h };
+}
+
 export function readFileAsDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
