@@ -35,6 +35,8 @@ services:
       interval: 10s
       timeout: 5s
       retries: 10
+    volumes:
+      - backend_uploads:/app/apps/backend/uploads
 
   frontend:
     build:
@@ -58,3 +60,4 @@ services:
 
 volumes:
   mongo_data:
+  backend_uploads:

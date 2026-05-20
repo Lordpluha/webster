@@ -50,7 +50,6 @@ export const AUTOSAVE_PROJECT_MUTATION = gql`
     autosaveProject(id: $id, content: $content) {
       id
       updatedAt
-      content
     }
   }
 `;

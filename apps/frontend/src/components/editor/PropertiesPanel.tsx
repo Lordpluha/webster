@@ -301,14 +301,22 @@ export const PropertiesPanel: FC = () => {
                     const file = e.target.files?.[0];
                     e.target.value = "";
                     if (!file || !file.type.startsWith("image/")) return;
-                    const reader = new FileReader();
-                    reader.onload = () => {
-                      const result = reader.result;
-                      if (typeof result === "string") {
-                        assignImageSrc(result);
+                    void (async () => {
+                      try {
+                        const projectId = workspace?.projectId;
+                        let src: string;
+                        if (projectId) {
+                          const { uploadProjectImage } = await import("@/shared/lib/upload-project-image");
+                          src = await uploadProjectImage(file, projectId);
+                        } else {
+                          const { readFileAsDataUrl } = await import("@/shared/lib/upload-project-image");
+                          src = await readFileAsDataUrl(file);
+                        }
+                        assignImageSrc(src);
+                      } catch {
+                        /* ignore — user can retry */
                       }
-                    };
-                    reader.readAsDataURL(file);
+                    })();
                   }}
                 />
               </label>

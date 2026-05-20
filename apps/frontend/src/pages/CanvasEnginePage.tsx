@@ -393,11 +393,21 @@ export function CanvasEnginePage() {
       if (json === lastSentJsonRef.current) {
         return;
       }
+      const content = JSON.parse(json) as {
+        nodes?: Record<string, { type?: string; data?: { src?: string } }>;
+      };
+      const hasEmbeddedImage = Object.values(content.nodes ?? {}).some(
+        (node) => node.type === "image" && node.data?.src?.startsWith("data:"),
+      );
+      if (hasEmbeddedImage) {
+        setAutosaveLabel("Re-upload images to save");
+        return;
+      }
       setAutosaveLabel("Saving…");
       void autosaveProject({
         variables: {
           id: projectId,
-          content: JSON.parse(json) as Record<string, unknown>,
+          content,
         },
       })
         .then(() => {
@@ -1434,19 +1444,18 @@ export function CanvasEnginePage() {
       const point = getCanvasPointFromClient(canvas, event.clientX, event.clientY);
       const worldPoint = renderer.screenToWorld(point);
 
-      const readAsDataUrl = (file: File) =>
-        new Promise<string>((resolve, reject) => {
-          const r = new FileReader();
-          r.onload = () => resolve(String(r.result));
-          r.onerror = () => reject(new Error("read failed"));
-          r.readAsDataURL(file);
-        });
-
       const file = files[0]!;
       let src: string;
       try {
-        src = await readAsDataUrl(file);
+        if (projectId && !standaloneMode) {
+          const { uploadProjectImage } = await import("@/shared/lib/upload-project-image");
+          src = await uploadProjectImage(file, projectId);
+        } else {
+          const { readFileAsDataUrl } = await import("@/shared/lib/upload-project-image");
+          src = await readFileAsDataUrl(file);
+        }
       } catch {
+        setAutosaveLabel("Upload failed");
         return;
       }
 
@@ -1496,7 +1505,7 @@ export function CanvasEnginePage() {
       });
       engine.setSelection([id]);
     },
-    [engine],
+    [engine, projectId, standaloneMode],
   );
 
   const runtimeSnapshot = engine.getRuntimeSnapshot();
