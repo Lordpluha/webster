@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
+  Logger,
   UnauthorizedException,
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
@@ -29,6 +30,8 @@ export interface TokenPair {
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     private readonly usersService: UsersService,
     private readonly jwtService: JwtService,
@@ -60,7 +63,9 @@ export class AuthService {
     });
 
     // Send verification email (fire-and-forget). Session starts only after verify + login.
-    this.sendVerificationEmail(user.id, user.email).catch(() => {});
+    this.sendVerificationEmail(user.id, user.email).catch((err) =>
+      this.logger.error(`Verification email failed for ${user.email}`, err?.stack ?? err),
+    );
 
     return { message: "Registration successful. Please check your email to verify your account." };
   }
@@ -176,7 +181,9 @@ export class AuthService {
     );
 
     // TODO: Send actual email with reset link
-    this.mailService.sendPasswordReset(email, resetToken).catch(() => {});
+    this.mailService.sendPasswordReset(email, resetToken).catch((err) =>
+      this.logger.error(`Password reset email failed for ${email}`, err?.stack ?? err),
+    );
 
     return { message: "If the email exists, a reset link has been sent" };
   }
@@ -287,7 +294,9 @@ export class AuthService {
       { secret: this.getJwtSecret(), expiresIn: "15m" } as any,
     );
 
-    this.mailService.sendMagicLink(email, token).catch(() => {});
+    this.mailService.sendMagicLink(email, token).catch((err) =>
+      this.logger.error(`Magic link email failed for ${email}`, err?.stack ?? err),
+    );
 
     return { message: "If the email exists, a magic link has been sent" };
   }
@@ -387,7 +396,9 @@ export class AuthService {
     );
 
     // TODO: Integrate with Nodemailer
-    this.mailService.sendEmailVerification(email, token).catch(() => {});
+    this.mailService.sendEmailVerification(email, token).catch((err) =>
+      this.logger.error(`Verification email failed for ${email}`, err?.stack ?? err),
+    );
   }
 
   private getJwtSecret() {

@@ -91,10 +91,10 @@ describe("MailService", () => {
       service = new MailService({ get: configGet } as any);
     });
 
-    it("should log to console instead of sending", async () => {
-      const debugSpy = jest.spyOn((service as any).logger, "debug").mockImplementation();
+    it("should log instead of sending when SMTP_HOST is unset", async () => {
+      const warnSpy = jest.spyOn((service as any).logger, "warn").mockImplementation();
       await service.send("to@test.com", "Subject", "<p>Body</p>");
-      expect(debugSpy).toHaveBeenCalled();
+      expect(warnSpy).toHaveBeenCalled();
       expect(mockSendMail).not.toHaveBeenCalled();
     });
   });

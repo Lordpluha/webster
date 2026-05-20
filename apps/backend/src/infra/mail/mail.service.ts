@@ -8,13 +8,23 @@ export class MailService {
   private transporter: Transporter | null = null;
 
   constructor(private readonly config: ConfigService) {
-    const host = this.config.get<string>("SMTP_HOST");
+    const host = this.config.get<string>("SMTP_HOST")?.trim();
     if (host) {
+      const auth = this.buildAuth();
+      const port = Number(this.config.get<string | number>("SMTP_PORT", 587));
       this.transporter = createTransport({
         host,
-        port: this.config.get<number>("SMTP_PORT", 587),
-        auth: this.buildAuth(),
+        port,
+        secure: port === 465,
+        auth,
       });
+      if (!auth) {
+        this.logger.warn(
+          "SMTP_HOST is set but SMTP_USER/SMTP_PASS missing — relay will reject messages",
+        );
+      } else {
+        this.logger.log(`SMTP configured: ${host}:${port}`);
+      }
     } else {
       this.logger.warn("SMTP_HOST not set — emails will be logged to console");
     }
@@ -24,11 +34,19 @@ export class MailService {
     const from = this.config.get<string>("SMTP_FROM", "Webster <no-reply@webster.local>");
 
     if (!this.transporter) {
-      this.logger.debug(`[Mail] To: ${to} | Subject: ${subject}\n${html}`);
+      this.logger.warn(`[Mail] (no SMTP) To: ${to} | Subject: ${subject}`);
+      this.logger.debug(html);
       return;
     }
 
-    await this.transporter.sendMail({ from, to, subject, html });
+    try {
+      const info = await this.transporter.sendMail({ from, to, subject, html });
+      this.logger.log(`Mail sent to ${to} (messageId=${info.messageId ?? "n/a"})`);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.logger.error(`Mail failed to ${to}: ${message}`);
+      throw err;
+    }
   }
 
   async sendPasswordReset(email: string, token: string) {
@@ -71,8 +89,8 @@ export class MailService {
   }
 
   private buildAuth() {
-    const user = this.config.get<string>("SMTP_USER");
-    const pass = this.config.get<string>("SMTP_PASS");
+    const user = this.config.get<string>("SMTP_USER")?.trim();
+    const pass = this.config.get<string>("SMTP_PASS")?.trim();
     if (user && pass) {
       return { user, pass };
     }
