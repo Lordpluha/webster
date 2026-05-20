@@ -1452,7 +1452,7 @@ export function CanvasEnginePage() {
         fitImageBounds,
         loadImageDimensions,
         readFileAsDataUrl,
-        uploadProjectImage,
+        uploadAndCommitImageSrc,
       } = await import("@/shared/lib/upload-project-image");
 
       const canUpload = Boolean(projectId && !standaloneMode);
@@ -1486,14 +1486,12 @@ export function CanvasEnginePage() {
 
       pendingImageUploadsRef.current += 1;
       setAutosaveLabel("Uploading image…");
-      void uploadProjectImage(file, projectId!)
-        .then((serverSrc) => {
-          engine.updateNode(id, (prev) => ({
-            ...prev,
-            data: { ...(prev.data ?? {}), src: serverSrc },
-          }));
-          URL.revokeObjectURL(previewSrc);
-        })
+      void uploadAndCommitImageSrc(file, projectId!, (serverSrc) => {
+        engine.updateNode(id, (prev) => ({
+          ...prev,
+          data: { ...(prev.data ?? {}), src: serverSrc },
+        }));
+      }, previewSrc)
         .catch(() => {
           setAutosaveLabel("Upload failed");
         })

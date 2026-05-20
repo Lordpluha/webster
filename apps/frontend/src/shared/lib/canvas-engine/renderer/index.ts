@@ -4,6 +4,7 @@ import type { SceneNode } from "../scene/scene-node";
 import { getNodeWorldBounds } from "../utils/mat2d";
 import { getSceneContentBounds, getSelectionWorldBounds } from "../utils/hit-test";
 import { getNodeSelectionOutlineWorld } from "../utils/selection-handles";
+import { canvasImageNeedsCrossOrigin, resolveCanvasImageSrc } from "../utils/image-src";
 
 // Per-frame cache: avoids recomputing the local→world matrix multiple times per node per frame.
 const frameWorldBoundsCache = new WeakMap<SceneNode, Rect>();
@@ -463,18 +464,23 @@ export class CanvasRenderer {
           this.ctx.fillText("Image", x + width / 2, y + height / 2);
           break;
         }
+        const resolvedSrc = resolveCanvasImageSrc(src);
         let img = this.imageElementsBySrc.get(src);
         if (!img) {
           img = new Image();
           img.decoding = "async";
-          img.crossOrigin = "anonymous";
+          if (canvasImageNeedsCrossOrigin(resolvedSrc)) {
+            img.crossOrigin = "anonymous";
+          }
           img.onload = () => this.scheduleRender();
           img.onerror = () => {
             this.imageLoadFailedSrc.add(src);
             this.scheduleRender();
           };
-          img.src = src;
+          img.src = resolvedSrc;
           this.imageElementsBySrc.set(src, img);
+        } else if (img.src !== resolvedSrc) {
+          img.src = resolvedSrc;
         }
         if (img.complete && img.naturalWidth > 0) {
           this.ctx.drawImage(img, x, y, width, height);
@@ -659,10 +665,13 @@ export class CanvasRenderer {
               resolve();
               return;
             }
+            const resolvedSrc = resolveCanvasImageSrc(src);
             if (!img) {
               img = new Image();
               img.decoding = "async";
-              img.crossOrigin = "anonymous";
+              if (canvasImageNeedsCrossOrigin(resolvedSrc)) {
+                img.crossOrigin = "anonymous";
+              }
               this.imageElementsBySrc.set(src, img);
             }
             img.onload = () => resolve();
@@ -670,7 +679,7 @@ export class CanvasRenderer {
               this.imageLoadFailedSrc.add(src);
               resolve();
             };
-            img.src = src;
+            img.src = resolvedSrc;
           }),
       ),
     );

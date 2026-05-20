@@ -1,3 +1,5 @@
+import { preloadCanvasImage, resolveCanvasImageSrc } from "./canvas-engine/utils/image-src";
+
 function getUploadEndpoint(): string {
   const graphql = import.meta.env.VITE_GRAPHQL_URL || "http://localhost:4000/graphql";
   if (graphql.startsWith("http")) {
@@ -41,6 +43,7 @@ export function isTemporaryImageSrc(src: string | undefined): boolean {
 }
 
 export function loadImageDimensions(src: string): Promise<{ width: number; height: number }> {
+  const resolved = resolveCanvasImageSrc(src);
   return new Promise((resolve, reject) => {
     const img = new Image();
     img.onload = () => {
@@ -50,8 +53,23 @@ export function loadImageDimensions(src: string): Promise<{ width: number; heigh
       });
     };
     img.onerror = () => reject(new Error("Failed to load image"));
-    img.src = src;
+    img.src = resolved;
   });
+}
+
+/** Upload, preload server URL, then swap — keeps blob visible until ready (no grey flash). */
+export async function uploadAndCommitImageSrc(
+  file: File,
+  projectId: string,
+  commit: (serverSrc: string) => void,
+  previewSrc: string,
+): Promise<void> {
+  const serverSrc = await uploadProjectImage(file, projectId);
+  await preloadCanvasImage(serverSrc);
+  commit(serverSrc);
+  if (previewSrc.startsWith("blob:")) {
+    URL.revokeObjectURL(previewSrc);
+  }
 }
 
 export function fitImageBounds(

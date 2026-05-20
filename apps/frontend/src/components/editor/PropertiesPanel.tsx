@@ -306,18 +306,14 @@ export const PropertiesPanel: FC = () => {
                         const projectId = workspace?.projectId;
                         const {
                           readFileAsDataUrl,
-                          uploadProjectImage,
+                          uploadAndCommitImageSrc,
                         } = await import("@/shared/lib/upload-project-image");
                         const previewSrc = projectId
                           ? URL.createObjectURL(file)
                           : await readFileAsDataUrl(file);
                         assignImageSrc(previewSrc);
                         if (!projectId) return;
-                        const serverSrc = await uploadProjectImage(file, projectId);
-                        assignImageSrc(serverSrc);
-                        if (previewSrc.startsWith("blob:")) {
-                          URL.revokeObjectURL(previewSrc);
-                        }
+                        await uploadAndCommitImageSrc(file, projectId, assignImageSrc, previewSrc);
                       } catch {
                         /* ignore — user can retry */
                       }
