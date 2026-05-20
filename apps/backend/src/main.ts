@@ -18,7 +18,14 @@ import { registerGraphiQLRoutes } from "./infra/graphql/register-graphiql";
 import { requestIdMiddleware } from "./infra/common/middleware/request-id.middleware";
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule, { bufferLogs: true });
+  // Canvas autosave sends full scene JSON (images as data URLs can be several MB).
+  const app = await NestFactory.create(AppModule, {
+    bufferLogs: true,
+    bodyParser: {
+      json: { limit: "50mb" },
+      urlencoded: { limit: "50mb", extended: true },
+    },
+  });
   const config = app.get(ConfigService);
   const port = Number(process.env.PORT || 4000);
   const isProduction = config.get("NODE_ENV") === "production";
