@@ -1,0 +1,61 @@
+@startuml sequence
+skinparam backgroundColor #FAFAFA
+
+title Sequence Diagram — Webster\nRegister → Login → Edit → Autosave
+
+actor User
+participant "React Frontend" as FE
+participant "NestJS Backend" as BE
+participant "MongoDB" as DB
+participant "Brevo SMTP" as Mail
+
+== Register & Verify ==
+
+User -> FE : Submit registration form
+FE -> BE : mutation register
+BE -> DB : Create user (isEmailVerified: false)
+BE -> Mail : Send verification email
+Mail --> User : Email with link
+BE --> FE : Success message
+
+User -> FE : Open /verify-email?token=...
+FE -> BE : mutation verifyEmail
+BE -> DB : Set isEmailVerified = true
+BE --> FE : OK
+
+== Login ==
+
+User -> FE : Enter credentials
+FE -> BE : mutation login
+BE -> DB : Validate user & password
+BE --> FE : Set HttpOnly cookies\n(access + refresh tokens)
+FE --> User : Redirect to /projects
+
+== Edit & Autosave ==
+
+User -> FE : Open editor
+FE -> BE : query project(id)
+BE -> DB : Find project
+DB --> BE : Project + content (JSON)
+BE --> FE : Project data
+FE -> FE : Load canvas scene
+
+User -> FE : Edit canvas
+FE -> FE : Debounce 1.2s
+FE -> BE : mutation autosaveProject(id, content)
+BE -> DB : Update project.content
+DB --> BE : OK
+BE --> FE : { id, updatedAt }
+FE --> User : Show "Saved"
+
+== Image Upload (optional) ==
+
+User -> FE : Drop image on canvas
+FE -> FE : Show blob preview
+FE -> BE : POST /upload
+BE -> DB : Save upload metadata
+BE --> FE : { url: /uploads/... }
+FE -> FE : Replace preview with server URL
+FE --> User : Image visible
+
+@enduml

@@ -1,0 +1,83 @@
+@startuml database
+skinparam backgroundColor #FAFAFA
+
+title Database Diagram — Webster (MongoDB)
+
+entity "users" as User {
+  * _id : ObjectId <<PK>>
+  --
+  * email : String <<unique>>
+  passwordHash : String
+  * firstName, lastName : String
+  * isEmailVerified : Boolean
+  * isTwoFactorEnabled : Boolean
+  oauthProvider, oauthId : String
+}
+
+entity "projectentities" as Project {
+  * _id : ObjectId <<PK>>
+  --
+  * userId : ObjectId <<FK>>
+  * title : String
+  * width, height : Int
+  content : JSON <<canvas scene>>
+  * isDeleted : Boolean
+}
+
+entity "projectversionentities" as Version {
+  * _id : ObjectId <<PK>>
+  --
+  * projectId : ObjectId <<FK>>
+  * userId : ObjectId <<FK>>
+  label : String
+  content : JSON <<snapshot>>
+}
+
+entity "templateentities" as Template {
+  * _id : ObjectId <<PK>>
+  --
+  userId : ObjectId <<FK, null = base>>
+  * title : String
+  content : JSON
+  * isPublic, isDeleted : Boolean
+}
+
+entity "refreshtokenentities" as RefreshToken {
+  * _id : ObjectId <<PK>>
+  --
+  * userId : ObjectId <<FK>>
+  * tokenHash : String
+  * expiresAt : Date <<TTL>>
+  * isRevoked : Boolean
+}
+
+entity "sharelinkentities" as ShareLink {
+  * _id : ObjectId <<PK>>
+  --
+  * token : String <<unique>>
+  * projectId : ObjectId <<FK>>
+  * userId : ObjectId <<FK>>
+  expiresAt : Date
+}
+
+entity "uploadassetentities" as Upload {
+  * _id : ObjectId <<PK>>
+  --
+  * userId : ObjectId <<FK>>
+  projectId : ObjectId <<FK>>
+  * fileName, mimeType, size : String/Int
+  * url : String
+}
+
+User ||--o{ Project
+User ||--o{ Version
+User ||--o{ Template
+User ||--o{ RefreshToken
+User ||--o{ ShareLink
+User ||--o{ Upload
+
+Project ||--o{ Version
+Project ||--o{ ShareLink
+Project ||--o{ Upload
+
+@enduml

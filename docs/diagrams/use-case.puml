@@ -1,0 +1,79 @@
+@startuml use-case
+left to right direction
+skinparam packageStyle rectangle
+skinparam usecase {
+  BackgroundColor LightBlue
+  BorderColor DarkSlateGray
+}
+
+actor Guest
+actor User
+actor System
+
+Guest --|> User
+
+rectangle "Authentication" {
+  usecase "Register" as UC_Register
+  usecase "Verify email" as UC_VerifyEmail
+  usecase "Login" as UC_Login
+  usecase "OAuth login" as UC_OAuth
+  usecase "Reset password" as UC_ResetPwd
+  usecase "Magic link login" as UC_MagicLink
+  usecase "Logout" as UC_Logout
+}
+
+rectangle "Profile" {
+  usecase "Edit profile" as UC_Profile
+  usecase "Change password" as UC_ChangePass
+  usecase "Enable 2FA" as UC_2FA
+}
+
+rectangle "Projects" {
+  usecase "View projects" as UC_ListProj
+  usecase "Create project" as UC_CreateProj
+  usecase "Delete project" as UC_DeleteProj
+}
+
+rectangle "Canvas Editor" {
+  usecase "Draw shapes & paths" as UC_Draw
+  usecase "Add text & images" as UC_Content
+  usecase "Transform elements" as UC_Transform
+  usecase "Undo / Redo" as UC_Undo
+  usecase "Autosave project" as UC_Autosave
+  usecase "Version history" as UC_Version
+}
+
+rectangle "Templates & Export" {
+  usecase "Use templates" as UC_Templates
+  usecase "Export design" as UC_Export
+  usecase "Share project link" as UC_Share
+}
+
+Guest --> UC_Register
+Guest --> UC_Login
+Guest --> UC_OAuth
+Guest --> UC_ResetPwd
+Guest --> UC_MagicLink
+
+User --> UC_VerifyEmail
+User --> UC_Logout
+User --> UC_Profile
+User --> UC_ChangePass
+User --> UC_2FA
+User --> UC_ListProj
+User --> UC_CreateProj
+User --> UC_DeleteProj
+User --> UC_Draw
+User --> UC_Content
+User --> UC_Transform
+User --> UC_Undo
+User --> UC_Version
+User --> UC_Templates
+User --> UC_Export
+User --> UC_Share
+
+System --> UC_Autosave
+System ..> UC_VerifyEmail : <<email>>
+System ..> UC_ResetPwd : <<email>>
+
+@enduml

@@ -1,0 +1,63 @@
+@startuml activity
+skinparam backgroundColor #FAFAFA
+skinparam activity {
+  BackgroundColor LightBlue
+  BorderColor DarkSlateGray
+  ArrowColor DarkSlateGray
+}
+
+title Activity Diagram — Webster\n(Register → Edit → Save)
+
+start
+
+:Open Webster;
+
+if (Authenticated?) then (no)
+  if (Has account?) then (yes — login)
+    :Login (email + password);
+    if (Email verified?) then (no)
+      :Verify email via link;
+    endif
+    :Receive session cookies;
+  else (no — register)
+    :Register;
+    :Verify email;
+    :Login;
+  endif
+endif
+
+:Open projects list;
+
+if (New or existing project?) then (new)
+  :Create project\n(from template or blank);
+else (existing)
+  :Open editor;
+endif
+
+:Load project content;
+
+repeat
+  :Edit canvas\n(shapes, text, images, layers);
+
+  if (Added image?) then (yes)
+    :Show instant preview;
+    :Upload to server;
+  endif
+
+  :Autosave to database;
+
+repeat while (Continue editing?) is (yes)
+
+if (Next action?) then (Export)
+  :Export (PNG / JPG / PDF / WEBP);
+elseif (Share)
+  :Create share link;
+elseif (Version history)
+  :Save or restore version;
+else (Done)
+  :Return to projects;
+endif
+
+stop
+
+@enduml

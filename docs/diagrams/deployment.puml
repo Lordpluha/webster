@@ -1,0 +1,49 @@
+@startuml deployment
+skinparam backgroundColor #FAFAFA
+
+title Deployment Diagram — Webster
+
+node "Client Browser" as Browser {
+  component "React SPA\n(Apollo, Canvas Engine)" as ReactApp
+}
+
+node "VPS (DigitalOcean)" as VPS {
+
+  node "Nginx :80 / :443" as Nginx {
+    component "Reverse Proxy + SSL" as Proxy
+  }
+
+  node "Docker Compose" as DC {
+
+    node "Frontend :5173" as FE {
+      component "Vite + React" as Vite
+    }
+
+    node "Backend :4000" as BE {
+      component "NestJS + GraphQL" as Nest
+      artifact "/uploads" as Uploads
+    }
+
+    node "MongoDB :27017" as Mongo {
+      database "Webster DB" as DB
+    }
+
+    FE --> BE : HTTP
+    BE --> Mongo : Mongoose
+  }
+
+  Proxy --> FE : /
+  Proxy --> BE : /graphql, /upload, /uploads
+}
+
+cloud "External Services" as Ext {
+  node "Brevo SMTP" as SMTP
+  node "OAuth Providers" as OAuth
+}
+
+Browser --> Nginx : HTTPS
+BE ..> SMTP
+Browser ..> OAuth
+OAuth ..> BE
+
+@enduml
