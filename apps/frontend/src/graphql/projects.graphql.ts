@@ -45,6 +45,17 @@ export const PROJECT_QUERY = gql`
   }
 `;
 
+export const RESOLVE_SHARE_LINK_QUERY = gql`
+  query ResolveShareLink($token: String!) {
+    resolveShareLink(token: $token) {
+      id
+      title
+      createdAt
+      updatedAt
+    }
+  }
+`;
+
 export const AUTOSAVE_PROJECT_MUTATION = gql`
   mutation AutosaveProject($id: ID!, $content: JSON!) {
     autosaveProject(id: $id, content: $content) {

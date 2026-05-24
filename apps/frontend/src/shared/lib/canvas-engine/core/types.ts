@@ -5,6 +5,7 @@ export type ToolName =
   | "select"
   | "text"
   | "pencil"
+  | "eraser"
   | "rect"
   | "triangle"
   | "ellipse"

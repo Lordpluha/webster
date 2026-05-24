@@ -11,6 +11,7 @@ import { ProfilePage } from "./pages/ProfilePage.tsx";
 import { ProjectsPage } from "./pages/ProjectsPage.tsx";
 import { RegisterPage } from "./pages/RegisterPage.tsx";
 import { ResetPasswordPage } from "./pages/ResetPasswordPage.tsx";
+import { SharePage } from "./pages/SharePage.tsx";
 import { TemplatesPage } from "./pages/TemplatesPage.tsx";
 import { VerifyEmailPage } from "./pages/VerifyEmailPage.tsx";
 import { ToastViewport } from "./components/ui/ToastViewport";
@@ -28,6 +29,7 @@ export default function App() {
         <Route path="/magic-link" element={<MagicLinkPage />} />
         <Route path="/auth/magic" element={<MagicLinkRedirect />} />
         <Route path="/oauth/callback" element={<OAuthCallbackPage />} />
+        <Route path="/share/:token" element={<SharePage />} />
         <Route
           path="/profile"
           element={

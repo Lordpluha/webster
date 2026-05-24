@@ -4,6 +4,7 @@ import { Grid3x3, History, ZoomIn, ZoomOut } from "lucide-react";
 import { Link } from "react-router-dom";
 
 import { BrandLogo } from "@/components/layout/BrandLogo";
+import { NumberInput, SliderInput } from "@/components/ui/controls";
 import { focusRingOnLightClass } from "@/shared/lib/a11y";
 import { useOptionalEditorWorkspace } from "./editor-workspace-context";
 import { useProjectVersionHistory } from "./useProjectVersionHistory";
@@ -21,8 +22,10 @@ export const EditorToolbar: FC = () => {
     if (!workspace) return;
     const { engine } = workspace;
     const offScene = engine.events.on("scene:changed", bump);
+    const offTool = engine.events.on("tool:changed", bump);
     return () => {
       offScene();
+      offTool();
     };
   }, [workspace]);
 
@@ -34,8 +37,9 @@ export const EditorToolbar: FC = () => {
     );
   }
 
-  const { zoomIn, zoomOut, zoomReset, cameraZoomPercent, gridEnabled, setGridEnabled, projectTitle } =
+  const { zoomIn, zoomOut, zoomReset, cameraZoomPercent, gridEnabled, setGridEnabled, projectTitle, eraserSize, setEraserSize } =
     workspace;
+  const activeTool = workspace.engine.getRuntimeSnapshot().activeTool;
 
   return (
     <header className="border-b border-violet-200/60 bg-white/90 shadow-sm backdrop-blur-md" role="banner">
@@ -96,6 +100,34 @@ export const EditorToolbar: FC = () => {
             <ZoomIn size={18} aria-hidden />
           </button>
         </div>
+
+        {activeTool === "eraser" ? (
+          <div className="flex items-end gap-3 rounded-lg border border-slate-200 bg-white/90 px-3 py-2">
+            <div className="min-w-48">
+              <SliderInput
+                label="Eraser"
+                min={6}
+                max={300}
+                step={2}
+                value={eraserSize}
+                unit="px"
+                showValue={false}
+                onChange={(event) => setEraserSize(Number(event.target.value))}
+              />
+            </div>
+            <div className="w-14">
+              <NumberInput
+                min={6}
+                max={300}
+                step={1}
+                value={eraserSize}
+                unit="px"
+                aria-label="Eraser size"
+                onChange={(event) => setEraserSize(Number(event.target.value))}
+              />
+            </div>
+          </div>
+        ) : null}
 
         <button
           type="button"

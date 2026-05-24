@@ -9,6 +9,7 @@ export const ENGINE_TOOLS: ToolDescriptor[] = [
   { id: "select", label: "Select" },
   { id: "text", label: "Text" },
   { id: "pencil", label: "Pencil" },
+  { id: "eraser", label: "Eraser" },
   { id: "rect", label: "Rect" },
   { id: "triangle", label: "Triangle" },
   { id: "ellipse", label: "Ellipse" },
