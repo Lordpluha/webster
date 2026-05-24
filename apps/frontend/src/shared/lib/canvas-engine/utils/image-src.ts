@@ -1,9 +1,16 @@
-function getApiOrigin(): string {
+/** Backend origin for static assets and upload (dev: Vite :5173 vs API :4000). */
+export function getApiOrigin(): string {
+  if (typeof window === "undefined") {
+    return "http://localhost:4000";
+  }
   const graphql = import.meta.env.VITE_GRAPHQL_URL || "http://localhost:4000/graphql";
+  if (!graphql.startsWith("http")) {
+    return window.location.origin;
+  }
   try {
     return new URL(graphql).origin;
   } catch {
-    return "http://localhost:4000";
+    return window.location.origin;
   }
 }
 
@@ -16,11 +23,12 @@ export function resolveCanvasImageSrc(src: string): string {
     return src;
   }
   if (src.startsWith("/")) {
-    const apiOrigin = getApiOrigin();
-    const isBackendAsset =
-      src.startsWith("/uploads/") || src.startsWith("/exports/");
-    if (isBackendAsset && window.location.origin !== apiOrigin) {
-      return `${apiOrigin}${src}`;
+    const isBackendAsset = src.startsWith("/uploads/") || src.startsWith("/exports/");
+    if (isBackendAsset && import.meta.env.DEV) {
+      const apiOrigin = getApiOrigin();
+      if (window.location.origin !== apiOrigin) {
+        return `${apiOrigin}${src}`;
+      }
     }
     return `${window.location.origin}${src}`;
   }

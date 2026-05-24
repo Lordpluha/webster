@@ -7,6 +7,7 @@ import { BrandLogo } from "@/components/layout/BrandLogo";
 import { RESOLVE_SHARE_LINK_QUERY } from "@/graphql/projects.graphql";
 import { useAuthStore } from "@/shared/stores/auth.store";
 import { useToastStore } from "@/shared/stores/toast.store";
+import { copyTextToClipboard } from "@/shared/lib/copy-to-clipboard";
 import { formatDateTime } from "@/shared/lib/format-datetime";
 
 type SharedProject = {
@@ -36,12 +37,16 @@ export function SharePage() {
   }
 
   const handleCopyLink = async () => {
-    try {
-      await navigator.clipboard.writeText(window.location.href);
+    const copied = await copyTextToClipboard(window.location.href);
+    if (copied) {
       pushToast({ title: "Link copied", tone: "success" });
-    } catch {
-      pushToast({ title: "Could not copy link", tone: "error" });
+      return;
     }
+    pushToast({
+      title: "Copy the link from the address bar",
+      message: window.location.href,
+      tone: "success",
+    });
   };
 
   if (loading) {

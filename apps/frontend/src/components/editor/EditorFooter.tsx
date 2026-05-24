@@ -16,6 +16,7 @@ import { BlockingOverlay } from "@/components/ui/BlockingOverlay";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { PromptDialog } from "@/components/ui/PromptDialog";
 import { focusRingOnDarkClass } from "@/shared/lib/a11y";
+import { copyTextToClipboard } from "@/shared/lib/copy-to-clipboard";
 import { formatDateTime } from "@/shared/lib/format-datetime";
 
 const footerBtnClass = `flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-violet-100 transition-colors hover:bg-white/10 disabled:opacity-50 ${focusRingOnDarkClass}`;
@@ -113,10 +114,12 @@ export const EditorFooter: FC = () => {
       const url = (res.data as { createShareLink?: { url?: string } })?.createShareLink?.url;
       if (url) {
         const shareUrl = url.startsWith("http") ? url : `${window.location.origin}${url}`;
-        await navigator.clipboard.writeText(shareUrl);
+        const copied = await copyTextToClipboard(shareUrl);
         pushToast({
-          title: "View-only link copied",
-          message: "Anyone with the link can view but not edit. " + shareUrl,
+          title: copied ? "View-only link copied" : "View-only share link",
+          message: copied
+            ? "Anyone with the link can view but not edit."
+            : `Copy this link manually: ${shareUrl}`,
           tone: "success",
         });
       }
