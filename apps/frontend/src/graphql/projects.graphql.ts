@@ -49,7 +49,11 @@ export const RESOLVE_SHARE_LINK_QUERY = gql`
   query ResolveShareLink($token: String!) {
     resolveShareLink(token: $token) {
       id
+      userId
       title
+      width
+      height
+      content
       createdAt
       updatedAt
     }

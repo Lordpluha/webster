@@ -1,3 +1,12 @@
+function getApiOrigin(): string {
+  const graphql = import.meta.env.VITE_GRAPHQL_URL || "http://localhost:4000/graphql";
+  try {
+    return new URL(graphql).origin;
+  } catch {
+    return "http://localhost:4000";
+  }
+}
+
 /** Resolve project asset paths for canvas Image() (same-origin, no CORS). */
 export function resolveCanvasImageSrc(src: string): string {
   if (typeof window === "undefined") {
@@ -7,6 +16,12 @@ export function resolveCanvasImageSrc(src: string): string {
     return src;
   }
   if (src.startsWith("/")) {
+    const apiOrigin = getApiOrigin();
+    const isBackendAsset =
+      src.startsWith("/uploads/") || src.startsWith("/exports/");
+    if (isBackendAsset && window.location.origin !== apiOrigin) {
+      return `${apiOrigin}${src}`;
+    }
     return `${window.location.origin}${src}`;
   }
   return src;

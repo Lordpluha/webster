@@ -114,7 +114,11 @@ export const EditorFooter: FC = () => {
       if (url) {
         const shareUrl = url.startsWith("http") ? url : `${window.location.origin}${url}`;
         await navigator.clipboard.writeText(shareUrl);
-        pushToast({ title: "Share link copied", message: shareUrl, tone: "success" });
+        pushToast({
+          title: "View-only link copied",
+          message: "Anyone with the link can view but not edit. " + shareUrl,
+          tone: "success",
+        });
       }
     } catch (e) {
       pushToast({
