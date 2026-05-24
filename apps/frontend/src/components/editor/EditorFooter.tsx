@@ -25,6 +25,8 @@ const EXPORT_BUTTONS: Array<{ format: ProjectExportFormat; label: string; ariaLa
   { format: "jpg", label: "JPG", ariaLabel: "Export project as JPG" },
   { format: "pdf", label: "PDF", ariaLabel: "Export project as PDF" },
   { format: "webp", label: "WEBP", ariaLabel: "Export project as WEBP" },
+  { format: "svg", label: "SVG", ariaLabel: "Export project as SVG" },
+  { format: "bmp", label: "BMP", ariaLabel: "Export project as BMP" },
   { format: "json", label: "JSON", ariaLabel: "Download scene as JSON file" },
 ];
 
@@ -87,6 +89,8 @@ export const EditorFooter: FC = () => {
         jpg: "JPG",
         pdf: "PDF",
         webp: "WEBP",
+        svg: "SVG",
+        bmp: "BMP",
         json: "JSON",
       };
       pushToast({ title: `${labels[format]} export ready`, tone: "success" });
@@ -108,8 +112,9 @@ export const EditorFooter: FC = () => {
       const res = await createShareLink({ variables: { projectId: pid, expiresInHours: 72 } });
       const url = (res.data as { createShareLink?: { url?: string } })?.createShareLink?.url;
       if (url) {
-        await navigator.clipboard.writeText(url);
-        pushToast({ title: "Share link copied", message: url, tone: "success" });
+        const shareUrl = url.startsWith("http") ? url : `${window.location.origin}${url}`;
+        await navigator.clipboard.writeText(shareUrl);
+        pushToast({ title: "Share link copied", message: shareUrl, tone: "success" });
       }
     } catch (e) {
       pushToast({
@@ -157,6 +162,10 @@ export const EditorFooter: FC = () => {
           ? "Exporting PDF..."
           : busy === "webp"
             ? "Exporting WEBP..."
+            : busy === "svg"
+              ? "Exporting SVG..."
+              : busy === "bmp"
+                ? "Exporting BMP..."
             : busy === "json"
               ? "Exporting JSON..."
               : null;

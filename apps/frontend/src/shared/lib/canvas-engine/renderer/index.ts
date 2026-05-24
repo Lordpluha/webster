@@ -9,12 +9,33 @@ import { canvasImageNeedsCrossOrigin, resolveCanvasImageSrc } from "../utils/ima
 // Per-frame cache: avoids recomputing the local→world matrix multiple times per node per frame.
 const frameWorldBoundsCache = new WeakMap<SceneNode, Rect>();
 
+function getNodeEraserPadding(node: SceneNode): number {
+  const marks = node.data?.eraseMarks;
+  if (!marks || marks.length === 0) {
+    return 0;
+  }
+  const maxRadius = marks.reduce((max, mark) => Math.max(max, mark.radius), 0);
+  const strokeWidth = node.style.strokeWidth ?? 1;
+  const scaleMax = Math.max(Math.abs(node.transform.scale.x), Math.abs(node.transform.scale.y), 1);
+  return Math.ceil(maxRadius * scaleMax + strokeWidth + 2);
+}
+
 function getCachedWorldBounds(node: SceneNode): Rect {
   const cached = frameWorldBoundsCache.get(node);
   if (cached) return cached;
   const bounds = getNodeWorldBounds(node);
-  frameWorldBoundsCache.set(node, bounds);
-  return bounds;
+  const padding = getNodeEraserPadding(node);
+  const padded =
+    padding > 0
+      ? {
+          x: bounds.x - padding,
+          y: bounds.y - padding,
+          width: bounds.width + padding * 2,
+          height: bounds.height + padding * 2,
+        }
+      : bounds;
+  frameWorldBoundsCache.set(node, padded);
+  return padded;
 }
 
 function clearFrameCache(): void {
@@ -284,6 +305,12 @@ export class CanvasRenderer {
   }
 
   private pickRenderMode(dirtyNodeIds: string[], nodes: Record<string, SceneNode>): RenderMode {
+    for (const node of Object.values(nodes)) {
+      if (node.data?.eraseMarks && node.data.eraseMarks.length > 0) {
+        return "full-redraw";
+      }
+    }
+
     if (this.camera.zoom !== 1 || this.camera.x !== 0 || this.camera.y !== 0) {
       return "full-redraw";
     }
@@ -317,11 +344,18 @@ export class CanvasRenderer {
     for (const id of dirtyNodeIds) {
       const nextBounds = nodes[id] ? getCachedWorldBounds(nodes[id]) : undefined;
       const prevBounds = this.lastNodeBounds.get(id);
-      const bounds = nextBounds ?? prevBounds;
-
-      if (!bounds) {
+      if (!nextBounds && !prevBounds) {
         return null;
       }
+
+      const bounds = nextBounds && prevBounds
+        ? {
+            x: Math.min(nextBounds.x, prevBounds.x),
+            y: Math.min(nextBounds.y, prevBounds.y),
+            width: Math.max(nextBounds.x + nextBounds.width, prevBounds.x + prevBounds.width) - Math.min(nextBounds.x, prevBounds.x),
+            height: Math.max(nextBounds.y + nextBounds.height, prevBounds.y + prevBounds.height) - Math.min(nextBounds.y, prevBounds.y),
+          }
+        : (nextBounds ?? prevBounds)!;
 
       minX = Math.min(minX, bounds.x);
       minY = Math.min(minY, bounds.y);
@@ -408,36 +442,77 @@ export class CanvasRenderer {
   }
 
   private drawNode(node: SceneNode): void {
+    const marks = node.data?.eraseMarks;
+    if (marks && marks.length > 0) {
+      this.drawNodeWithEraser(node, marks);
+      return;
+    }
+
+    this.drawNodeDirect(this.ctx, node);
+  }
+
+  private drawNodeWithEraser(node: SceneNode, marks: Array<{ x: number; y: number; radius: number }>): void {
+    const { x, y, width, height } = node.bounds;
+    const strokeWidth = node.style.strokeWidth ?? 1;
+    const maxRadius = marks.reduce((max, mark) => Math.max(max, mark.radius), 0);
+    const padding = Math.ceil(Math.max(4, maxRadius + strokeWidth + 2));
+    const canvasWidth = Math.max(1, Math.ceil(width + padding * 2));
+    const canvasHeight = Math.max(1, Math.ceil(height + padding * 2));
+
+    const offscreen = document.createElement("canvas");
+    offscreen.width = canvasWidth;
+    offscreen.height = canvasHeight;
+    const offscreenCtx = offscreen.getContext("2d");
+    if (!offscreenCtx) {
+      this.drawNodeDirect(this.ctx, node);
+      return;
+    }
+
+    offscreenCtx.save();
+    offscreenCtx.translate(-x + padding, -y + padding);
+    this.drawNodeDirect(offscreenCtx, node);
+    offscreenCtx.restore();
+
+    offscreenCtx.save();
+    offscreenCtx.translate(-x + padding, -y + padding);
+    offscreenCtx.globalCompositeOperation = "destination-out";
+    offscreenCtx.fillStyle = "#000";
+    for (const mark of marks) {
+      const markX = mark.x + x;
+      const markY = mark.y + y;
+      offscreenCtx.beginPath();
+      offscreenCtx.arc(markX, markY, mark.radius, 0, Math.PI * 2);
+      offscreenCtx.fill();
+    }
+    offscreenCtx.restore();
+
+    this.ctx.drawImage(offscreen, x - padding, y - padding);
+  }
+
+  private drawNodeDirect(ctx: CanvasRenderingContext2D, node: SceneNode): void {
     const { x, y, width, height } = node.bounds;
     const fill = node.style.fill ?? "#60a5fa";
     const stroke = node.style.stroke ?? "#1e293b";
     const strokeWidth = node.style.strokeWidth ?? 1;
     const opacity = node.style.opacity ?? 1;
 
-    this.ctx.save();
-    this.ctx.globalAlpha = opacity;
-    this.ctx.translate(node.transform.translate.x, node.transform.translate.y);
+    ctx.save();
+    ctx.globalAlpha = opacity;
+    this.applyNodeTransform(ctx, node);
 
-    const centerX = x + width / 2;
-    const centerY = y + height / 2;
-    this.ctx.translate(centerX, centerY);
-    this.ctx.rotate((node.transform.rotate * Math.PI) / 180);
-    this.ctx.scale(node.transform.scale.x, node.transform.scale.y);
-    this.ctx.translate(-centerX, -centerY);
-
-    this.ctx.fillStyle = fill;
-    this.ctx.strokeStyle = stroke;
-    this.ctx.lineWidth = strokeWidth;
+    ctx.fillStyle = fill;
+    ctx.strokeStyle = stroke;
+    ctx.lineWidth = strokeWidth;
 
     switch (node.type) {
       case "triangle": {
-        this.ctx.beginPath();
-        this.ctx.moveTo(x + width / 2, y);
-        this.ctx.lineTo(x + width, y + height);
-        this.ctx.lineTo(x, y + height);
-        this.ctx.closePath();
-        this.ctx.fill();
-        this.ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(x + width / 2, y);
+        ctx.lineTo(x + width, y + height);
+        ctx.lineTo(x, y + height);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
         break;
       }
       case "ellipse": {
@@ -445,23 +520,23 @@ export class CanvasRenderer {
         const cy = y + height / 2;
         const rx = Math.max(0.5, width / 2);
         const ry = Math.max(0.5, height / 2);
-        this.ctx.beginPath();
-        this.ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
-        this.ctx.fill();
-        this.ctx.stroke();
+        ctx.beginPath();
+        ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
         break;
       }
       case "image": {
         const src = node.data?.src;
         if (!src || this.imageLoadFailedSrc.has(src)) {
-          this.ctx.fillStyle = fill;
-          this.ctx.fillRect(x, y, width, height);
-          this.ctx.strokeRect(x, y, width, height);
-          this.ctx.fillStyle = "#64748b";
-          this.ctx.font = `${Math.max(10, Math.min(width, height) * 0.12)}px sans-serif`;
-          this.ctx.textAlign = "center";
-          this.ctx.textBaseline = "middle";
-          this.ctx.fillText("Image", x + width / 2, y + height / 2);
+          ctx.fillStyle = fill;
+          ctx.fillRect(x, y, width, height);
+          ctx.strokeRect(x, y, width, height);
+          ctx.fillStyle = "#64748b";
+          ctx.font = `${Math.max(10, Math.min(width, height) * 0.12)}px sans-serif`;
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          ctx.fillText("Image", x + width / 2, y + height / 2);
           break;
         }
         const resolvedSrc = resolveCanvasImageSrc(src);
@@ -483,12 +558,12 @@ export class CanvasRenderer {
           img.src = resolvedSrc;
         }
         if (img.complete && img.naturalWidth > 0) {
-          this.ctx.drawImage(img, x, y, width, height);
-          this.ctx.strokeRect(x, y, width, height);
+          ctx.drawImage(img, x, y, width, height);
+          ctx.strokeRect(x, y, width, height);
         } else {
-          this.ctx.fillStyle = fill;
-          this.ctx.fillRect(x, y, width, height);
-          this.ctx.strokeRect(x, y, width, height);
+          ctx.fillStyle = fill;
+          ctx.fillRect(x, y, width, height);
+          ctx.strokeRect(x, y, width, height);
         }
         break;
       }
@@ -511,31 +586,31 @@ export class CanvasRenderer {
             const perpX = -uy;
             const perpY = ux;
 
-            this.ctx.beginPath();
-            this.ctx.moveTo(start.x, start.y);
-            this.ctx.lineTo(baseX, baseY);
-            this.ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(start.x, start.y);
+            ctx.lineTo(baseX, baseY);
+            ctx.stroke();
 
-            this.ctx.beginPath();
-            this.ctx.moveTo(end.x, end.y);
-            this.ctx.lineTo(baseX + perpX * (headWidth / 2), baseY + perpY * (headWidth / 2));
-            this.ctx.lineTo(baseX - perpX * (headWidth / 2), baseY - perpY * (headWidth / 2));
-            this.ctx.closePath();
-            this.ctx.fill();
-            this.ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(end.x, end.y);
+            ctx.lineTo(baseX + perpX * (headWidth / 2), baseY + perpY * (headWidth / 2));
+            ctx.lineTo(baseX - perpX * (headWidth / 2), baseY - perpY * (headWidth / 2));
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
           }
         } else {
           const head = Math.min(width, height) * 0.28;
-          this.ctx.beginPath();
-          this.ctx.moveTo(x, y + height / 2);
-          this.ctx.lineTo(x + width - head, y + height / 2);
-          this.ctx.moveTo(x + width - head, y + height / 2);
-          this.ctx.lineTo(x + width - head, y + height / 2 - head / 2);
-          this.ctx.moveTo(x + width - head, y + height / 2);
-          this.ctx.lineTo(x + width - head, y + height / 2 + head / 2);
-          this.ctx.lineTo(x + width, y + height / 2);
-          this.ctx.lineTo(x + width - head, y + height / 2 - head / 2);
-          this.ctx.stroke();
+          ctx.beginPath();
+          ctx.moveTo(x, y + height / 2);
+          ctx.lineTo(x + width - head, y + height / 2);
+          ctx.moveTo(x + width - head, y + height / 2);
+          ctx.lineTo(x + width - head, y + height / 2 - head / 2);
+          ctx.moveTo(x + width - head, y + height / 2);
+          ctx.lineTo(x + width - head, y + height / 2 + head / 2);
+          ctx.lineTo(x + width, y + height / 2);
+          ctx.lineTo(x + width - head, y + height / 2 - head / 2);
+          ctx.stroke();
         }
         break;
       }
@@ -550,43 +625,55 @@ export class CanvasRenderer {
             : "sans-serif";
         const text = node.data?.text ?? "Text";
 
-        this.ctx.font = `${fontSize}px ${fontFamily}`;
-        this.ctx.textBaseline = "top";
-        this.ctx.lineJoin = "round";
-        this.ctx.lineCap = "round";
-        this.ctx.fillStyle = fill;
-        this.ctx.strokeStyle = stroke;
+        ctx.font = `${fontSize}px ${fontFamily}`;
+        ctx.textBaseline = "top";
+        ctx.lineJoin = "round";
+        ctx.lineCap = "round";
+        ctx.fillStyle = fill;
+        ctx.strokeStyle = stroke;
 
         if (strokeWidth > 0) {
-          this.ctx.lineWidth = strokeWidth;
-          this.ctx.strokeText(text, x, y);
+          ctx.lineWidth = strokeWidth;
+          ctx.strokeText(text, x, y);
         }
 
-        this.ctx.fillText(text, x, y);
+        ctx.fillText(text, x, y);
         break;
       }
       case "path": {
         const points = node.data?.points ?? [];
         if (points.length >= 2) {
-          this.ctx.beginPath();
-          this.ctx.moveTo(points[0].x, points[0].y);
+          ctx.beginPath();
+          ctx.moveTo(points[0].x, points[0].y);
           for (let index = 1; index < points.length; index += 1) {
             const point = points[index];
-            this.ctx.lineTo(point.x, point.y);
+            ctx.lineTo(point.x, point.y);
           }
-          this.ctx.stroke();
+          ctx.stroke();
         }
         break;
       }
       default: {
-        this.ctx.beginPath();
-        this.ctx.rect(x, y, width, height);
-        this.ctx.fill();
-        this.ctx.stroke();
+        ctx.beginPath();
+        ctx.rect(x, y, width, height);
+        ctx.fill();
+        ctx.stroke();
       }
     }
 
-    this.ctx.restore();
+    ctx.restore();
+  }
+
+  private applyNodeTransform(ctx: CanvasRenderingContext2D, node: SceneNode): void {
+    const { x, y, width, height } = node.bounds;
+    ctx.translate(node.transform.translate.x, node.transform.translate.y);
+
+    const centerX = x + width / 2;
+    const centerY = y + height / 2;
+    ctx.translate(centerX, centerY);
+    ctx.rotate((node.transform.rotate * Math.PI) / 180);
+    ctx.scale(node.transform.scale.x, node.transform.scale.y);
+    ctx.translate(-centerX, -centerY);
   }
 
   private drawSelectionOverlay(

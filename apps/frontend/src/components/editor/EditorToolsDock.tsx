@@ -4,6 +4,7 @@ import {
   ArrowRight,
   ChevronDown,
   Circle,
+  Eraser,
   Image,
   MousePointer2,
   Pencil,
@@ -22,6 +23,7 @@ const dockBtnBase = `inline-flex h-10 w-10 items-center justify-center rounded-x
 const PRIMARY_DOCK_TOOLS: Array<{ id: ToolName; label: string; Icon: FC<{ className?: string }> }> = [
   { id: "select", label: "Select", Icon: MousePointer2 },
   { id: "pencil", label: "Pencil", Icon: Pencil },
+  { id: "eraser", label: "Eraser", Icon: Eraser },
   { id: "text", label: "Text", Icon: Type },
   { id: "arrow", label: "Arrow", Icon: ArrowRight },
   { id: "image", label: "Image", Icon: Image },

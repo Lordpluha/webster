@@ -11,8 +11,11 @@ export interface SceneNodeStyle {
 
 export interface SceneNodeData {
   text?: string;
+  fontSize?: number;
+  fontFamily?: string;
   src?: string;
   points?: Point[];
+  eraseMarks?: Array<{ x: number; y: number; radius: number }>;
   groupId?: string;
   groupLabel?: string;
   label?: string;

@@ -18,6 +18,8 @@ export type EditorWorkspaceContextValue = {
   cameraZoomPercent: number;
   gridEnabled: boolean;
   setGridEnabled: (next: boolean) => void;
+  eraserSize: number;
+  setEraserSize: (next: number) => void;
   exportProject: (format: ProjectExportFormat) => Promise<void>;
 };
 

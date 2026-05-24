@@ -95,6 +95,7 @@
 - [x] Реализовать editor shell и маршрутизацию до страницы редактора.
 - [x] Подключить canvas-area к engine API роли 1 без копирования логики движка.
 - [x] Реализовать панель свойств, работающую через engine API (без логики трансформаций в UI).
+- [x] Реализовать вставление изображений из буфера обмена на canvas (Clipboard API).
 
 ## 5. Интеграция UI с backend
 
@@ -115,6 +116,14 @@
 - Редактор `/editor`: `CanvasEnginePage` оборачивает канвас в `CanvasEditorLayout` + `EditorWorkspaceProvider` — тулбар/свойства/футер получают один и тот же `CanvasEngine` через контекст; вся геометрия/рендер остаётся в движке.
 - `Project.content` / autosave / шаблоны: тот же JSON, что `serializeSceneToJson` / `SerializableSceneState`; маппинг в `apps/frontend/src/shared/lib/editor/scene-from-project-content.ts`.
 - Футер: Save now (`autosaveProject`), snapshot / restore версий (`createVersion`, `restoreVersion`), JSON (клиентский файл), PNG (`exportPng` + URL), шаблон (`createUserTemplate`), share (`createShareLink` + буфер обмена).
+- Clipboard paste: вставка изображения из буфера (Ctrl/Cmd+V) на canvas, позиция по последнему курсору, fallback в центр; загрузка на backend как при drag-and-drop.
+- Share: публічна сторінка `/share/:token` резолвить посилання та веде до editor після логіну.
+- Eraser tool: кисть стирания 6-300px + ручной ввод; при смене размера показ превью-кола в центре; стирание записывается как маска в локальних координатах ноди, шар зберігається.
+- Hotkeys: Select V, Text T, Eraser E, Pencil B; Alt+drag mouse left/right змінює розмір гумки.
+- Alt key: в редакторі блокуємо браузерне меню, поза редактором — стандартна поведінка.
+- Ctrl/Cmd+B: в редакторі не відкриває браузерне меню, переключає на Select.
+- Eraser scope: стирає лише обраний об'єкт (selection), інші не чіпає.
+- Render note: nodes with eraser masks render through full redraw; mask stored relative to node bounds so erased part moves with node.
 - **My templates** (`/templates`): список `userTemplates`, New template (пустая сцена), Edit (title/size), Delete, New project из шаблона. В навигации только «My templates» (без отдельного каталога base templates в UI).
 - Логотип: `src/assets/webster-logo.svg` + `WebsterLogoIcon` в `BrandLogo` (шапка, редактор, favicon).
 - `/canvas-engine`: по-прежнему полноэкранный стенд движка без product shell.
@@ -158,3 +167,8 @@
 - [x] UI корректно обрабатывает ошибки backend.
 - [x] Критические пользовательские сценарии покрыты e2e тестами.
 - [x] Нет дублирования canvas-логики из роли 1 внутри UI-слоя.
+
+## Примітки до roli 2 (2026-05-24)
+
+- Виправлено поведінку гумки: тепер стирає лише обраний об'єкт (якщо є виділення) або об'єкт під курсором (якщо нічого не виділено). Раніве могла стирати усі об'єкти або не стирати через помилку в логіці вибору цільового об'єкта.
+- Виправлено Alt+drag для зміни розміру гумки: тепер працює правильно під час використання гумки.

@@ -49,9 +49,11 @@ export function findResizeHandleAtWorldPoint(
   node: { bounds: Rect; transform: Transform },
   sizeWorld: number,
 ): ResizeHandleId | null {
-  const radius = sizeWorld / 2;
+  const halfSize = sizeWorld / 2;
   for (const handle of getResizeHandlesWorld(node)) {
-    if (Math.hypot(point.x - handle.x, point.y - handle.y) <= radius) {
+    const dx = Math.abs(point.x - handle.x);
+    const dy = Math.abs(point.y - handle.y);
+    if (dx <= halfSize && dy <= halfSize) {
       return handle.id;
     }
   }

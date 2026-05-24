@@ -1,6 +1,6 @@
-import { ArrowRight, Circle, Image as ImageIcon, MousePointer2, Pencil, Square, Triangle, Type } from "lucide-react";
+import { ArrowRight, Circle, Eraser, Image as ImageIcon, MousePointer2, Pencil, Square, Triangle, Type } from "lucide-react";
 import { useMutation, useQuery } from "@apollo/client/react";
-import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ClipboardEvent as ReactClipboardEvent, type DragEvent } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 
 import { CanvasEditorLayout, EditorWorkspaceProvider } from "@/components/editor";
@@ -16,7 +16,6 @@ import { useToastStore } from "@/shared/stores/toast.store";
 
 import {
   DEFAULT_LAYER_ID,
-  ENGINE_TOOLS,
   CanvasRenderer,
   applyMat2DToPoint,
   composeNodeLocalToWorldMatrix,
@@ -63,11 +62,12 @@ type ResizeHandle = "nw" | "n" | "ne" | "e" | "se" | "s" | "sw" | "w";
 
 const TOOLBAR_TOOLS: CanvasToolUiItem[] = [
   { id: "select", label: "Select", hint: "V", Icon: MousePointer2 },
-  { id: "pencil", label: "Pencil", hint: "P", Icon: Pencil },
+  { id: "pencil", label: "Pencil", hint: "B", Icon: Pencil },
+  { id: "eraser", label: "Eraser", hint: "E", Icon: Eraser },
   { id: "text", label: "Text", hint: "T", Icon: Type },
   { id: "rect", label: "Rect", hint: "R", Icon: Square },
   { id: "triangle", label: "Triangle", hint: "G", Icon: Triangle },
-  { id: "ellipse", label: "Ellipse", hint: "E", Icon: Circle },
+  { id: "ellipse", label: "Ellipse", hint: "O", Icon: Circle },
   { id: "arrow", label: "Arrow", hint: "A", Icon: ArrowRight },
   { id: "image", label: "Image", hint: "I", Icon: ImageIcon },
 ];
@@ -130,6 +130,10 @@ type DragState =
       center: Point;
       startAngle: number;
       startRotation: number;
+    }
+  | {
+      mode: "erase";
+      pointerId: number;
     };
 
 type EngineDebugState = {
@@ -160,6 +164,7 @@ export function CanvasEnginePage() {
   const dragStateRef = useRef<DragState | null>(null);
   const autosaveTimerRef = useRef<number | null>(null);
   const pendingImageUploadsRef = useRef(0);
+  const lastPointerClientRef = useRef<Point | null>(null);
   const lastSentJsonRef = useRef<string>("");
   const hydratedEditorProjectIdRef = useRef<string | null>(null);
 
@@ -182,6 +187,10 @@ export function CanvasEnginePage() {
   const [autosaveProject] = useMutation(AUTOSAVE_PROJECT_MUTATION);
   const [autosaveLabel, setAutosaveLabel] = useState<string>("");
   const [editorGridEnabled, setEditorGridEnabled] = useState(false);
+  const [eraserSize, setEraserSize] = useState(24);
+  const [showEraserPreview, setShowEraserPreview] = useState(false);
+  const eraserPreviewTimerRef = useRef<number | null>(null);
+  const eraserResizeRef = useRef<{ startX: number; startSize: number } | null>(null);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [pendingLeavePath, setPendingLeavePath] = useState<string | null>(null);
   const [textPrompt, setTextPrompt] = useState<TextPromptState | null>(null);
@@ -205,6 +214,32 @@ export function CanvasEnginePage() {
       cameraZoom: 1,
     };
   });
+
+  const isEditableElement = useCallback((element: Element | null) => {
+    if (!element) return false;
+    const tagName = element.tagName;
+    if (tagName === "INPUT" || tagName === "TEXTAREA") return true;
+    return (element as HTMLElement).isContentEditable;
+  }, []);
+
+  const getImageFileFromClipboard = useCallback((clipboard: DataTransfer | null) => {
+    if (!clipboard) return null;
+    if (clipboard.files?.length) {
+      const fileFromFiles = Array.from(clipboard.files).find((file) => file.type.startsWith("image/"));
+      if (fileFromFiles) return fileFromFiles;
+    }
+
+    const items = clipboard.items;
+    if (!items?.length) return null;
+    for (const item of items) {
+      if (item.type.startsWith("image/")) {
+        const file = item.getAsFile();
+        if (file) return file;
+      }
+    }
+
+    return null;
+  }, []);
 
   const [selectionBoxRect, setSelectionBoxRect] = useState<{
     screenX: number;
@@ -237,6 +272,12 @@ export function CanvasEnginePage() {
     },
     [engine],
   );
+
+  const setEraserSizeSafe = useCallback((next: number) => {
+    const safe = Number.isFinite(next) ? next : eraserSize;
+    const clamped = Math.min(300, Math.max(6, Math.round(safe)));
+    setEraserSize(clamped);
+  }, [eraserSize]);
 
   const zoomIn = useCallback(() => {
     const r = rendererRef.current;
@@ -309,6 +350,8 @@ export function CanvasEnginePage() {
       cameraZoomPercent: Math.min(400, Math.max(25, Math.round(debug.cameraZoom * 100))),
       gridEnabled: editorGridEnabled,
       setGridEnabled: setEditorGridEnabled,
+      eraserSize,
+      setEraserSize: setEraserSizeSafe,
       exportProject,
     }),
     [
@@ -325,8 +368,67 @@ export function CanvasEnginePage() {
       exportProject,
       debug.cameraZoom,
       editorGridEnabled,
+      eraserSize,
+      setEraserSizeSafe,
     ],
   );
+
+  useEffect(() => {
+    if (debug.activeTool !== "eraser") {
+      setShowEraserPreview(false);
+      return;
+    }
+    setShowEraserPreview(true);
+    if (eraserPreviewTimerRef.current) {
+      window.clearTimeout(eraserPreviewTimerRef.current);
+    }
+    eraserPreviewTimerRef.current = window.setTimeout(() => {
+      setShowEraserPreview(false);
+    }, 650);
+    return () => {
+      if (eraserPreviewTimerRef.current) {
+        window.clearTimeout(eraserPreviewTimerRef.current);
+        eraserPreviewTimerRef.current = null;
+      }
+    };
+  }, [eraserSize, debug.activeTool]);
+
+  useEffect(() => {
+    const handleResizeMove = (event: MouseEvent) => {
+      if (debug.activeTool !== "eraser") return;
+      if (!event.altKey) {
+        eraserResizeRef.current = null;
+        return;
+      }
+      if (!eraserResizeRef.current) {
+        eraserResizeRef.current = { startX: event.clientX, startSize: eraserSize };
+      }
+      const deltaX = event.clientX - eraserResizeRef.current.startX;
+      setEraserSizeSafe(eraserResizeRef.current.startSize - deltaX);
+    };
+
+    window.addEventListener("mousemove", handleResizeMove);
+    return () => window.removeEventListener("mousemove", handleResizeMove);
+  }, [debug.activeTool, eraserSize, setEraserSizeSafe]);
+
+  useEffect(() => {
+    if (!isEditorRoute) {
+      return;
+    }
+
+    const handleAltKey = (event: KeyboardEvent) => {
+      if (event.key === "Alt") {
+        event.preventDefault();
+      }
+    };
+
+    window.addEventListener("keydown", handleAltKey, { capture: true });
+    window.addEventListener("keyup", handleAltKey, { capture: true });
+    return () => {
+      window.removeEventListener("keydown", handleAltKey, { capture: true } as AddEventListenerOptions);
+      window.removeEventListener("keyup", handleAltKey, { capture: true } as AddEventListenerOptions);
+    };
+  }, [isEditorRoute]);
 
   useEffect(() => {
     if (standaloneMode || !isEditorRoute) {
@@ -624,6 +726,26 @@ export function CanvasEnginePage() {
       const key = event.key.toLowerCase();
       const isUndoRedo = hasModifier && (key === "z" || key === "y");
       const isSceneJsonShortcut = hasModifier && event.shiftKey && (key === "s" || key === "o");
+      if (!hasModifier && !event.shiftKey && !event.altKey) {
+        const hotkeyMap: Record<string, ToolName> = {
+          v: "select",
+          t: "text",
+          e: "eraser",
+          b: "pencil",
+        };
+        const nextTool = hotkeyMap[key];
+        if (nextTool) {
+          event.preventDefault();
+          engine.setTool(nextTool);
+          return;
+        }
+      }
+
+      if (hasModifier && key === "b") {
+        event.preventDefault();
+        engine.setTool("select");
+        return;
+      }
 
       // Allow core shortcuts even before first canvas interaction.
       if (!canvasInteractionActiveRef.current && !isUndoRedo && !isSceneJsonShortcut) {
@@ -633,6 +755,21 @@ export function CanvasEnginePage() {
       const runtime = engine.getRuntimeSnapshot();
       const selectedNodeIds = runtime.selectedNodeIds;
       const hasSelection = selectedNodeIds.length > 0;
+
+      if (!hasModifier && !event.shiftKey && !event.altKey) {
+        const toolByKey: Record<string, ToolName> = {
+          v: "select",
+          t: "text",
+          e: "eraser",
+          b: "pencil",
+        };
+        const nextTool = toolByKey[key];
+        if (nextTool) {
+          event.preventDefault();
+          engine.setTool(nextTool);
+          return;
+        }
+      }
 
       if (hasModifier && event.key.toLowerCase() === "z") {
         event.preventDefault();
@@ -768,16 +905,6 @@ export function CanvasEnginePage() {
         return;
       }
 
-      const toolIndex = Number(event.key);
-      if (Number.isInteger(toolIndex) && toolIndex >= 1 && toolIndex <= ENGINE_TOOLS.length) {
-        event.preventDefault();
-        const nextTool = ENGINE_TOOLS[toolIndex - 1]?.id;
-        if (nextTool) {
-          engine.setTool(nextTool);
-        }
-        return;
-      }
-
       const arrowMove =
         event.key === "ArrowUp"
           ? { x: 0, y: -8 }
@@ -836,6 +963,7 @@ export function CanvasEnginePage() {
       return;
     }
 
+    lastPointerClientRef.current = { x: event.clientX, y: event.clientY };
     canvasInteractionActiveRef.current = true;
     event.currentTarget.focus();
 
@@ -848,6 +976,16 @@ export function CanvasEnginePage() {
     const worldPoint = renderer.screenToWorld(point);
     const scene = engine.getSerializableState();
     const activeTool = engine.getRuntimeSnapshot().activeTool;
+
+    if (activeTool === "eraser") {
+      eraseNodeAtWorldPoint(worldPoint);
+      dragStateRef.current = {
+        mode: "erase",
+        pointerId: event.pointerId,
+      };
+      event.currentTarget.setPointerCapture(event.pointerId);
+      return;
+    }
 
     if (activeTool === "text") {
       setTextPrompt({ mode: "create", x: worldPoint.x, y: worldPoint.y });
@@ -1088,6 +1226,7 @@ export function CanvasEnginePage() {
   }
 
   function handleCanvasPointerMove(event: React.PointerEvent<HTMLCanvasElement>): void {
+    lastPointerClientRef.current = { x: event.clientX, y: event.clientY };
     const dragState = dragStateRef.current;
     if (!dragState || dragState.pointerId !== event.pointerId) {
       return;
@@ -1100,6 +1239,21 @@ export function CanvasEnginePage() {
 
     const point = getCanvasPoint(event);
     const worldPoint = renderer.screenToWorld(point);
+
+    if (dragState.mode === "erase") {
+      if (event.altKey) {
+        if (!eraserResizeRef.current) {
+          eraserResizeRef.current = { startX: event.clientX, startSize: eraserSize };
+        }
+        const deltaX = event.clientX - eraserResizeRef.current.startX;
+        const nextSize = eraserResizeRef.current.startSize - deltaX;
+        setEraserSizeSafe(nextSize);
+        return;
+      }
+      eraserResizeRef.current = null;
+      eraseNodeAtWorldPoint(worldPoint);
+      return;
+    }
 
     if (dragState.mode === "pan") {
       const deltaX = event.clientX - dragState.startClient.x;
@@ -1284,6 +1438,10 @@ export function CanvasEnginePage() {
       return;
     }
 
+    if (dragState.mode === "erase") {
+      eraserResizeRef.current = null;
+    }
+
     if (dragState.mode === "pencil") {
       if (dragState.points.length <= 1) {
         engine.removeNode(dragState.nodeId);
@@ -1430,24 +1588,8 @@ export function CanvasEnginePage() {
     event.dataTransfer.dropEffect = "copy";
   }, []);
 
-  const handleCanvasDrop = useCallback(
-    async (event: DragEvent<HTMLCanvasElement>) => {
-      event.preventDefault();
-      const files = Array.from(event.dataTransfer.files).filter((f) => f.type.startsWith("image/"));
-      if (files.length === 0) {
-        return;
-      }
-
-      const canvas = event.currentTarget;
-      const renderer = rendererRef.current;
-      if (!renderer) {
-        return;
-      }
-
-      const point = getCanvasPointFromClient(canvas, event.clientX, event.clientY);
-      const worldPoint = renderer.screenToWorld(point);
-
-      const file = files[0]!;
+  const insertImageAtWorldPoint = useCallback(
+    async (file: File, worldPoint: Point) => {
       const {
         fitImageBounds,
         loadImageDimensions,
@@ -1501,6 +1643,149 @@ export function CanvasEnginePage() {
     },
     [engine, projectId, standaloneMode],
   );
+
+  const eraseNodeAtWorldPoint = useCallback((worldPoint: Point) => {
+    const renderer = rendererRef.current;
+    if (!renderer) {
+      return;
+    }
+    const runtime = engine.getRuntimeSnapshot();
+    const scene = engine.getSerializableState();
+    const selectedIds = runtime.selectedNodeIds;
+    const hitNodeId = pickTopNodeAtPoint(scene, worldPoint);
+
+    // Determine target: if selection exists, hit must be in selection; if no selection, target is hit
+    let targetId: NodeId | null = null;
+    if (selectedIds.length > 0) {
+      if (hitNodeId && selectedIds.includes(hitNodeId)) {
+        targetId = hitNodeId;
+      }
+    } else {
+      targetId = hitNodeId;
+    }
+
+    if (!targetId) {
+      return;
+    }
+
+    const hitNode = scene.nodes[targetId];
+    if (!hitNode || hitNode.data?.locked || hitNode.data?.hidden) {
+      return;
+    }
+
+    const worldToLocal = invertMat2D(composeNodeLocalToWorldMatrix(hitNode));
+    if (!worldToLocal) {
+      return;
+    }
+    const localPoint = applyMat2DToPoint(worldToLocal, worldPoint);
+    const relativePoint = {
+      x: localPoint.x - hitNode.bounds.x,
+      y: localPoint.y - hitNode.bounds.y,
+    };
+
+    const zoom = Math.max(0.1, renderer.getCamera().zoom);
+    const scaleAvg = Math.max(0.05, (Math.abs(hitNode.transform.scale.x) + Math.abs(hitNode.transform.scale.y)) / 2);
+    const radius = Math.max(2, eraserSize / zoom / 2 / scaleAvg);
+
+    engine.updateNode(targetId, (prev) => {
+      const nextMarks = prev.data?.eraseMarks ? [...prev.data.eraseMarks] : [];
+      const last = nextMarks[nextMarks.length - 1];
+      if (last && distance(last, relativePoint) < Math.max(1, radius * 0.4)) {
+        return prev;
+      }
+      nextMarks.push({ x: relativePoint.x, y: relativePoint.y, radius });
+      return {
+        ...prev,
+        data: {
+          ...(prev.data ?? {}),
+          eraseMarks: nextMarks,
+        },
+      };
+    }, { history: { label: "erase", mergeKey: `erase:${targetId}` } });
+
+    setDebug((prev) => ({
+      ...prev,
+      lastEvent: `node:erase:${targetId}`,
+    }));
+  }, [engine, eraserSize]);
+
+  const handleCanvasDrop = useCallback(
+    async (event: DragEvent<HTMLCanvasElement>) => {
+      event.preventDefault();
+      const files = Array.from(event.dataTransfer.files).filter((f) => f.type.startsWith("image/"));
+      if (files.length === 0) {
+        return;
+      }
+
+      const canvas = event.currentTarget;
+      const renderer = rendererRef.current;
+      if (!renderer) {
+        return;
+      }
+
+      const point = getCanvasPointFromClient(canvas, event.clientX, event.clientY);
+      const worldPoint = renderer.screenToWorld(point);
+
+      const file = files[0]!;
+      await insertImageAtWorldPoint(file, worldPoint);
+    },
+    [insertImageAtWorldPoint],
+  );
+
+  const handleCanvasPaste = useCallback(
+    async (event: ReactClipboardEvent<HTMLCanvasElement>) => {
+      const file = getImageFileFromClipboard(event.clipboardData);
+      if (!file) {
+        return;
+      }
+
+      event.preventDefault();
+      const canvas = event.currentTarget;
+      const renderer = rendererRef.current;
+      if (!renderer) {
+        return;
+      }
+
+      const rect = canvas.getBoundingClientRect();
+      const clientPoint = lastPointerClientRef.current ?? {
+        x: rect.left + rect.width / 2,
+        y: rect.top + rect.height / 2,
+      };
+      const point = getCanvasPointFromClient(canvas, clientPoint.x, clientPoint.y);
+      const worldPoint = renderer.screenToWorld(point);
+      await insertImageAtWorldPoint(file, worldPoint);
+    },
+    [getImageFileFromClipboard, insertImageAtWorldPoint],
+  );
+
+  useEffect(() => {
+    const handleWindowPaste = (event: ClipboardEvent) => {
+      if (!isEditorRoute) return;
+      if (!canvasRef.current) return;
+      if (event.defaultPrevented) return;
+      if (isEditableElement(document.activeElement)) return;
+
+      const file = getImageFileFromClipboard(event.clipboardData);
+      if (!file) return;
+
+      event.preventDefault();
+      const canvas = canvasRef.current;
+      const renderer = rendererRef.current;
+      if (!renderer) return;
+
+      const rect = canvas.getBoundingClientRect();
+      const clientPoint = lastPointerClientRef.current ?? {
+        x: rect.left + rect.width / 2,
+        y: rect.top + rect.height / 2,
+      };
+      const point = getCanvasPointFromClient(canvas, clientPoint.x, clientPoint.y);
+      const worldPoint = renderer.screenToWorld(point);
+      void insertImageAtWorldPoint(file, worldPoint);
+    };
+
+    window.addEventListener("paste", handleWindowPaste);
+    return () => window.removeEventListener("paste", handleWindowPaste);
+  }, [getImageFileFromClipboard, insertImageAtWorldPoint, isEditableElement, isEditorRoute]);
 
   const runtimeSnapshot = engine.getRuntimeSnapshot();
   const selectedNodeId = runtimeSnapshot.selectedNodeIds.length === 1 ? runtimeSnapshot.selectedNodeIds[0] : null;
@@ -1563,10 +1848,23 @@ export function CanvasEnginePage() {
         />
       ) : null}
 
+      {showEraserPreview && debug.activeTool === "eraser" ? (
+        <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center">
+          <div
+            className="rounded-full border border-slate-900/70 bg-slate-900/5 shadow-[0_0_0_1px_rgba(255,255,255,0.7)]"
+            style={{
+              width: `${eraserSize}px`,
+              height: `${eraserSize}px`,
+            }}
+          />
+        </div>
+      ) : null}
+
       <canvas
         ref={canvasRef}
         className="absolute inset-0 h-full w-full touch-none overscroll-none cursor-grab active:cursor-grabbing"
         tabIndex={0}
+        onPaste={(e) => void handleCanvasPaste(e)}
         onDragOver={handleCanvasDragOver}
         onDrop={(e) => void handleCanvasDrop(e)}
         onBlur={() => {

@@ -20,7 +20,7 @@ export interface ObjectProperties {
 }
 
 export interface ToolbarState {
-  activeTool: "select" | "rect" | "triangle" | "circle" | "text" | "pencil" | "arrow" | "image";
+  activeTool: "select" | "rect" | "triangle" | "circle" | "text" | "pencil" | "eraser" | "arrow" | "image";
   zoom: number;
   gridEnabled: boolean;
   gridSize: number;
