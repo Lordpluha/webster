@@ -2,8 +2,7 @@ services:
   mongo:
     image: mongo:7
     restart: unless-stopped
-    ports:
-      - "27017:27017"
+    # No host port — DB only reachable inside Docker network (not from the internet).
     environment:
       MONGO_INITDB_ROOT_USERNAME: webster
       MONGO_INITDB_ROOT_PASSWORD: webster
