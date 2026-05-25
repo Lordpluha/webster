@@ -11,6 +11,7 @@ import {
   UPDATE_PROFILE_MUTATION,
 } from "../graphql/auth.graphql";
 import { useAuthStore } from "../shared/stores/auth.store";
+import { TwoFactorSettings } from "@/components/profile/TwoFactorSettings";
 import { useToastStore } from "@/shared/stores/toast.store";
 
 type Modal = "edit" | "password" | null;
@@ -167,8 +168,23 @@ export function ProfilePage() {
                 {user.isEmailVerified ? "Yes" : "No"}
               </p>
             </div>
+            <div>
+              <p className="text-sm text-violet-200/70">Two-factor (2FA)</p>
+              <p
+                className={`mt-2 text-lg font-semibold ${
+                  user.isTwoFactorEnabled ? "text-cyan-300" : "text-violet-300/60"
+                }`}
+              >
+                {user.isTwoFactorEnabled ? "Enabled" : "Disabled"}
+              </p>
+            </div>
           </div>
         </section>
+
+        <TwoFactorSettings
+          isTwoFactorEnabled={user.isTwoFactorEnabled}
+          isEmailVerified={user.isEmailVerified}
+        />
 
         <section className="glass-card mt-6 rounded-2xl p-6">
           <h2 className="text-lg font-semibold text-white">Quick actions</h2>

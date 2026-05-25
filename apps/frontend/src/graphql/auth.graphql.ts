@@ -111,3 +111,28 @@ export const UPDATE_PROFILE_MUTATION = gql`
     }
   }
 `;
+
+export const GENERATE_TWO_FACTOR_SECRET_MUTATION = gql`
+  mutation GenerateTwoFactorSecret {
+    generateTwoFactorSecret {
+      secret
+      qrCodeUrl
+    }
+  }
+`;
+
+export const ENABLE_TWO_FACTOR_MUTATION = gql`
+  mutation EnableTwoFactor($code: String!) {
+    enableTwoFactor(code: $code) {
+      message
+    }
+  }
+`;
+
+export const DISABLE_TWO_FACTOR_MUTATION = gql`
+  mutation DisableTwoFactor($password: String!) {
+    disableTwoFactor(password: $password) {
+      message
+    }
+  }
+`;
