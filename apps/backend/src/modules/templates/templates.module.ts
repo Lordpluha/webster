@@ -6,6 +6,7 @@ import { ProjectEntity, ProjectSchema } from "../projects/entities/project.entit
 import { UsersModule } from "../users/users.module";
 import { TemplateEntity, TemplateSchema } from "./entities/template.entity";
 import { TemplatesResolver } from "./templates.resolver";
+import { TemplatesSeedService } from "./templates-seed.service";
 import { TemplatesService } from "./templates.service";
 
 @Module({
@@ -17,7 +18,7 @@ import { TemplatesService } from "./templates.service";
     AuthModule,
     UsersModule,
   ],
-  providers: [TemplatesService, TemplatesResolver],
+  providers: [TemplatesService, TemplatesResolver, TemplatesSeedService],
   exports: [TemplatesService],
 })
 export class TemplatesModule {}

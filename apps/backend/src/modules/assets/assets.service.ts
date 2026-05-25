@@ -4,6 +4,7 @@ import {
     Injectable,
     NotFoundException,
 } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
 import { InjectModel } from "@nestjs/mongoose";
 import { Model, Types } from "mongoose";
 import { randomUUID } from "node:crypto";
@@ -33,6 +34,7 @@ export class AssetsService {
     private readonly shareLinkModel: Model<ShareLinkEntity>,
     @InjectModel(ProjectEntity.name)
     private readonly projectModel: Model<ProjectEntity>,
+    private readonly config: ConfigService,
   ) {}
 
   async uploadFile(
@@ -88,9 +90,13 @@ export class AssetsService {
       isRevoked: false,
     });
 
+    const frontendBase = this.config
+      .get<string>("FRONTEND_URL", "http://localhost:5173")
+      .replace(/\/$/, "");
+
     return {
       token,
-      url: `/share/${token}`,
+      url: `${frontendBase}/share/${token}`,
       expiresAt: expiresAt ?? undefined,
     };
   }
