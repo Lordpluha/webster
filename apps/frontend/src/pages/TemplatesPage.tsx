@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useMutation, useQuery } from "@apollo/client/react";
-import { LayoutTemplate, Pencil, Trash2 } from "lucide-react";
+import { LayoutTemplate } from "lucide-react";
 
+import { TemplateGridCard } from "@/components/templates/TemplateGridCard";
 import { AppShell } from "@/components/layout/AppShell";
 import { AppPageSpinner } from "@/components/ui/PageSpinner";
 import {
@@ -141,24 +142,14 @@ export function TemplatesPage() {
         ) : (
           <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {baseTemplates.map((template) => (
-              <article
+              <TemplateGridCard
                 key={template.id}
-                className="glass-card flex flex-col rounded-2xl p-5 transition hover:bg-white/12"
-              >
-                <div className="mb-3 flex h-24 items-center justify-center rounded-xl bg-linear-to-br from-cyan-500/25 via-violet-500/20 to-fuchsia-500/25">
-                  <LayoutTemplate className="h-8 w-8 text-white/90" aria-hidden />
-                </div>
-                <h3 className="text-lg font-semibold text-white">{template.title}</h3>
-                <p className="mt-1 text-xs text-cyan-200/70">Built-in · Webster</p>
-                <button
-                  type="button"
-                  disabled={busy}
-                  onClick={() => setUseTemplatePrompt(template)}
-                  className="mt-auto rounded-full bg-linear-to-r from-violet-500 to-fuchsia-500 px-4 py-2 pt-4 text-sm font-semibold text-white disabled:opacity-60"
-                >
-                  {creatingProject ? "Creating…" : "New project"}
-                </button>
-              </article>
+                template={template}
+                meta="Built-in · Webster"
+                busy={busy}
+                creatingProject={creatingProject}
+                onNewProject={() => setUseTemplatePrompt(template)}
+              />
             ))}
           </div>
         )}
@@ -212,46 +203,16 @@ export function TemplatesPage() {
 
       <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {templates.map((template) => (
-          <article
+          <TemplateGridCard
             key={template.id}
-            className="glass-card flex flex-col rounded-2xl p-5 transition hover:bg-white/12"
-          >
-            <div className="mb-3 flex h-24 items-center justify-center rounded-xl bg-linear-to-br from-violet-500/30 via-fuchsia-500/20 to-cyan-500/25">
-              <LayoutTemplate className="h-8 w-8 text-white/90" />
-            </div>
-            <h2 className="text-lg font-semibold text-white">{template.title}</h2>
-            <p className="mt-1 text-xs text-violet-200/70">Updated {formatDateTime(template.updatedAt)}</p>
-            <div className="mt-auto flex flex-wrap gap-2 pt-4">
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => setUseTemplatePrompt(template)}
-                className="rounded-full bg-linear-to-r from-violet-500 to-fuchsia-500 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
-              >
-                {creatingProject ? "Creating…" : "New project"}
-              </button>
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => setRenameTemplate(template)}
-                className="inline-flex items-center gap-1 rounded-full border border-white/20 px-3 py-2 text-sm text-violet-100 hover:bg-white/10 disabled:opacity-60"
-                title="Rename template"
-              >
-                <Pencil className="h-3.5 w-3.5" />
-                Rename
-              </button>
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => setConfirmDelete(template)}
-                className="inline-flex items-center gap-1 rounded-full border border-rose-400/40 px-3 py-2 text-sm text-rose-200 hover:bg-rose-500/10 disabled:opacity-60"
-                title="Delete template"
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-                Delete
-              </button>
-            </div>
-          </article>
+            template={template}
+            meta={`Updated ${formatDateTime(template.updatedAt)}`}
+            busy={busy}
+            creatingProject={creatingProject}
+            onNewProject={() => setUseTemplatePrompt(template)}
+            onRename={() => setRenameTemplate(template)}
+            onDelete={() => setConfirmDelete(template)}
+          />
         ))}
       </section>
 
