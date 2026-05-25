@@ -6,6 +6,7 @@ import { LayoutTemplate, Pencil, Trash2 } from "lucide-react";
 import { AppShell } from "@/components/layout/AppShell";
 import { AppPageSpinner } from "@/components/ui/PageSpinner";
 import {
+  BASE_TEMPLATES_QUERY,
   DELETE_USER_TEMPLATE_MUTATION,
   UPDATE_USER_TEMPLATE_MUTATION,
   USER_TEMPLATES_QUERY,
@@ -34,10 +35,18 @@ export function TemplatesPage() {
   const [confirmDelete, setConfirmDelete] = useState<TemplateItem | null>(null);
   const [useTemplatePrompt, setUseTemplatePrompt] = useState<TemplateItem | null>(null);
 
+  const { data: baseData, loading: baseLoading } = useQuery(BASE_TEMPLATES_QUERY, {
+    skip: !user,
+    fetchPolicy: "cache-and-network",
+  });
+
   const { data, loading, error, refetch } = useQuery(USER_TEMPLATES_QUERY, {
     skip: !user,
     fetchPolicy: "cache-and-network",
   });
+
+  const baseTemplates =
+    (baseData as { baseTemplates?: TemplateItem[] } | undefined)?.baseTemplates ?? [];
 
   const [createFromTemplate, { loading: creatingProject }] = useMutation(
     CREATE_PROJECT_FROM_TEMPLATE_MUTATION,
@@ -117,12 +126,51 @@ export function TemplatesPage() {
   return (
     <AppShell title="My templates" subtitle="Templates">
       <p className="mb-6 max-w-2xl text-sm text-violet-100/75">
-        Templates are saved from your projects: open the{" "}
+        <strong className="font-semibold text-violet-100">Built-in templates</strong> are ready on every
+        account. Your own templates come from the editor via{" "}
+        <strong className="font-semibold text-violet-100">Save as template</strong> in the footer.
+      </p>
+
+      <section className="mb-8">
+        <h2 className="text-base font-semibold text-white">Built-in templates</h2>
+        <p className="mt-1 text-sm text-violet-200/70">
+          Default starters for demos and new projects — also shown when you click New project.
+        </p>
+        {baseLoading ? (
+          <p className="mt-4 text-sm text-violet-200/70">Loading built-in templates…</p>
+        ) : (
+          <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {baseTemplates.map((template) => (
+              <article
+                key={template.id}
+                className="glass-card flex flex-col rounded-2xl p-5 transition hover:bg-white/12"
+              >
+                <div className="mb-3 flex h-24 items-center justify-center rounded-xl bg-linear-to-br from-cyan-500/25 via-violet-500/20 to-fuchsia-500/25">
+                  <LayoutTemplate className="h-8 w-8 text-white/90" aria-hidden />
+                </div>
+                <h3 className="text-lg font-semibold text-white">{template.title}</h3>
+                <p className="mt-1 text-xs text-cyan-200/70">Built-in · Webster</p>
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => setUseTemplatePrompt(template)}
+                  className="mt-auto rounded-full bg-linear-to-r from-violet-500 to-fuchsia-500 px-4 py-2 pt-4 text-sm font-semibold text-white disabled:opacity-60"
+                >
+                  {creatingProject ? "Creating…" : "New project"}
+                </button>
+              </article>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <h2 className="text-base font-semibold text-white">My templates</h2>
+      <p className="mt-1 mb-4 text-sm text-violet-200/70">
+        Saved from your projects in the{" "}
         <Link to="/editor" className="font-semibold text-cyan-300 hover:underline">
           editor
         </Link>
-        , design a board, then use <strong className="font-semibold text-violet-100">Save as template</strong>{" "}
-        in the footer. Start a new project here from any saved template.
+        .
       </p>
 
       {actionError ? (

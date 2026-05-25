@@ -5,6 +5,11 @@ import { Plus } from "lucide-react";
 
 import { AppShell } from "@/components/layout/AppShell";
 import { AppPageSpinner } from "@/components/ui/PageSpinner";
+import { TemplateCard } from "@/components/templates/TemplateCard";
+import {
+  BASE_TEMPLATES_QUERY,
+  CREATE_PROJECT_FROM_TEMPLATE_MUTATION,
+} from "@/graphql/templates.graphql";
 import {
   CREATE_PROJECT_MUTATION,
   DELETE_PROJECT_MUTATION,
@@ -26,6 +31,7 @@ export function ProjectsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [title, setTitle] = useState("");
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<{ id: string; title: string } | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -36,6 +42,29 @@ export function ProjectsPage() {
     skip: !user,
     fetchPolicy: "cache-and-network",
   });
+  const { data: baseTemplatesData, loading: baseTemplatesLoading } = useQuery(BASE_TEMPLATES_QUERY, {
+    skip: !user || !createModalOpen,
+    fetchPolicy: "cache-and-network",
+  });
+
+  const baseTemplates =
+    (baseTemplatesData as { baseTemplates?: Array<{ id: string; title: string; width?: number; height?: number }> } | undefined)
+      ?.baseTemplates ?? [];
+
+  const [createFromTemplate, { loading: creatingFromTemplate }] = useMutation(
+    CREATE_PROJECT_FROM_TEMPLATE_MUTATION,
+    {
+      refetchQueries: [{ query: PROJECTS_QUERY, variables: { pagination: DEFAULT_PAGINATION } }],
+      onError: (err) => {
+        pushToast({
+          title: "Project creation failed",
+          message: err.message,
+          tone: "error",
+        });
+      },
+    },
+  );
+
   const [createProject, { loading: creating }] = useMutation(CREATE_PROJECT_MUTATION, {
     refetchQueries: [{ query: PROJECTS_QUERY, variables: { pagination: DEFAULT_PAGINATION } }],
     onError: (err) => {
@@ -114,14 +143,18 @@ export function ProjectsPage() {
     }
   }, [searchParams, setSearchParams]);
 
+  const creatingProject = creating || creatingFromTemplate;
+
   const openCreateModal = useCallback(() => {
     setTitle(`Untitled ${new Date().toLocaleDateString()}`);
+    setSelectedTemplateId(null);
     setFormError(null);
     setCreateModalOpen(true);
   }, []);
 
   const closeCreateModal = useCallback(() => {
     setCreateModalOpen(false);
+    setSelectedTemplateId(null);
     setFormError(null);
   }, []);
 
@@ -134,16 +167,26 @@ export function ProjectsPage() {
 
     setFormError(null);
     try {
-      const result = await createProject({
-        variables: {
-          input: {
-            title: trimmed,
-            content: EMPTY_SCENE,
-          },
-        },
-      });
+      const result = selectedTemplateId
+        ? await createFromTemplate({
+            variables: {
+              templateId: selectedTemplateId,
+              title: trimmed,
+            },
+          })
+        : await createProject({
+            variables: {
+              input: {
+                title: trimmed,
+                content: EMPTY_SCENE,
+              },
+            },
+          });
 
-      const projectId = result.data?.createProject?.id as string | undefined;
+      const projectId = selectedTemplateId
+        ? (result.data as { createProjectFromTemplate?: { id: string } } | undefined)
+            ?.createProjectFromTemplate?.id
+        : (result.data?.createProject?.id as string | undefined);
       if (projectId) {
         closeCreateModal();
         pushToast({ title: "Project created", tone: "success" });
@@ -185,7 +228,7 @@ export function ProjectsPage() {
         <button
           type="button"
           onClick={openCreateModal}
-          disabled={creating}
+          disabled={creatingProject}
           className="inline-flex items-center gap-2 rounded-full bg-linear-to-r from-violet-500 to-fuchsia-500 px-5 py-2.5 text-sm font-bold text-white shadow-lg disabled:opacity-60"
         >
           <Plus className="h-4 w-4" />
@@ -225,7 +268,7 @@ export function ProjectsPage() {
                 type="button"
                 className="rounded-full border border-rose-500/40 px-4 py-2 text-sm text-rose-200 transition hover:border-rose-400 disabled:opacity-60"
                 onClick={() => setConfirmDelete({ id: project.id, title: project.title })}
-                disabled={creating || deleting}
+                disabled={creatingProject || deleting}
               >
                 Delete
               </button>
@@ -234,7 +277,7 @@ export function ProjectsPage() {
         ))}
       </section>
 
-      {(creating || deletingId) && (
+      {(creatingProject || deletingId) && (
         <BlockingOverlay label={deletingId ? "Deleting project..." : "Creating project..."} />
       )}
 
@@ -247,7 +290,7 @@ export function ProjectsPage() {
           }}
         >
           <div
-            className="w-full max-w-md rounded-2xl border border-white/10 bg-violet-950 p-6 shadow-2xl"
+            className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-2xl border border-white/10 bg-violet-950 p-6 shadow-2xl"
             role="dialog"
             aria-modal="true"
             aria-labelledby="create-project-title"
@@ -256,10 +299,49 @@ export function ProjectsPage() {
             <h2 id="create-project-title" className="text-lg font-semibold text-white">
               New project
             </h2>
-            <p className="mt-1 text-sm text-violet-200/70">Name your board and start drawing on an open canvas.</p>
+            <p className="mt-1 text-sm text-violet-200/70">
+              Pick a built-in template or start from an empty canvas, then name your board.
+            </p>
+
+            <p className="mt-5 text-xs font-semibold uppercase tracking-wide text-violet-300/80">
+              Built-in templates
+            </p>
+            {baseTemplatesLoading ? (
+              <p className="mt-3 text-sm text-violet-200/70">Loading templates…</p>
+            ) : (
+              <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {baseTemplates.map((template) => (
+                  <TemplateCard
+                    key={template.id}
+                    template={template}
+                    busy={creatingProject}
+                    selected={selectedTemplateId === template.id}
+                    onUse={() => {
+                      setSelectedTemplateId(template.id);
+                      if (template.title && title.startsWith("Untitled")) {
+                        setTitle(template.title);
+                      }
+                    }}
+                  />
+                ))}
+              </div>
+            )}
+
+            <button
+              type="button"
+              className={`mt-3 w-full rounded-xl border px-4 py-3 text-left text-sm transition ${
+                selectedTemplateId === null
+                  ? "border-cyan-400/60 bg-cyan-500/15 text-white"
+                  : "border-white/15 text-violet-100 hover:bg-white/10"
+              }`}
+              onClick={() => setSelectedTemplateId(null)}
+            >
+              <span className="font-semibold">Empty canvas</span>
+              <span className="mt-0.5 block text-xs text-violet-200/65">1200×800, no preset elements</span>
+            </button>
 
             <label className="mt-5 block text-sm font-medium text-violet-100">
-              Title
+              Project title
               <input
                 className="mt-1.5 w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-white outline-none focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/30"
                 value={title}
@@ -275,7 +357,7 @@ export function ProjectsPage() {
                 type="button"
                 className="rounded-full border border-white/20 px-4 py-2 text-sm text-violet-100 hover:bg-white/10"
                 onClick={closeCreateModal}
-                disabled={creating}
+                disabled={creatingProject}
               >
                 Cancel
               </button>
@@ -283,9 +365,9 @@ export function ProjectsPage() {
                 type="button"
                 className="rounded-full bg-linear-to-r from-violet-500 to-fuchsia-500 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
                 onClick={() => void handleSubmitCreate()}
-                disabled={creating}
+                disabled={creatingProject}
               >
-                {creating ? "Creating…" : "Create & open"}
+                {creatingProject ? "Creating…" : "Create & open"}
               </button>
             </div>
           </div>

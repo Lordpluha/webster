@@ -1,5 +1,18 @@
 import { gql } from "@apollo/client";
 
+export const BASE_TEMPLATES_QUERY = gql`
+  query BaseTemplates {
+    baseTemplates {
+      id
+      title
+      width
+      height
+      thumbnailUrl
+      updatedAt
+    }
+  }
+`;
+
 export const USER_TEMPLATES_QUERY = gql`
   query UserTemplates {
     userTemplates {
