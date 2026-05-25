@@ -109,20 +109,27 @@ export function hitTestNodeAtWorldPoint(node: SceneNode, worldPoint: Point): boo
     }
     case "arrow":
     case "path": {
-      const points = node.data?.points;
-      if (!points || points.length < 2) {
-        // Fallback to bounds for degenerate arrow/path.
+      const contours =
+        node.data?.contours && node.data.contours.length > 0
+          ? node.data.contours
+          : node.data?.points && node.data.points.length >= 2
+            ? [node.data.points]
+            : null;
+
+      if (!contours) {
         return isPointInRectLocal(localPoint, localBounds);
       }
 
       const strokeWidth = node.style.strokeWidth ?? 2;
       const hitRadius = Math.max(4, strokeWidth * 1.5);
 
-      for (let i = 0; i < points.length - 1; i += 1) {
-        const a = points[i];
-        const b = points[i + 1];
-        if (distancePointToSegment(localPoint, a, b) <= hitRadius) {
-          return true;
+      for (const points of contours) {
+        for (let i = 0; i < points.length - 1; i += 1) {
+          const a = points[i];
+          const b = points[i + 1];
+          if (distancePointToSegment(localPoint, a, b) <= hitRadius) {
+            return true;
+          }
         }
       }
       return false;

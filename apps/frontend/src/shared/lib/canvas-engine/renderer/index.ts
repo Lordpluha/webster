@@ -641,14 +641,25 @@ export class CanvasRenderer {
         break;
       }
       case "path": {
-        const points = node.data?.points ?? [];
-        if (points.length >= 2) {
+        const contours =
+          node.data?.contours && node.data.contours.length > 0
+            ? node.data.contours
+            : node.data?.points && node.data.points.length >= 2
+              ? [node.data.points]
+              : [];
+
+        for (const points of contours) {
+          if (points.length < 2) {
+            continue;
+          }
           ctx.beginPath();
           ctx.moveTo(points[0].x, points[0].y);
           for (let index = 1; index < points.length; index += 1) {
             const point = points[index];
             ctx.lineTo(point.x, point.y);
           }
+          ctx.closePath();
+          ctx.fill();
           ctx.stroke();
         }
         break;

@@ -372,6 +372,12 @@ function freezeSceneState(sceneState: SerializableSceneState): SerializableScene
     if (node.data?.points) {
       Object.freeze(node.data.points);
     }
+    if (node.data?.contours) {
+      for (const contour of node.data.contours) {
+        Object.freeze(contour);
+      }
+      Object.freeze(node.data.contours);
+    }
 
     Object.freeze(node.data ?? {});
     Object.freeze(node.style);

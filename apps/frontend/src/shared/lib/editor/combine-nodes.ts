@@ -14,6 +14,8 @@ import {
 
 const COMBINABLE_TYPES = new Set<SceneNode["type"]>(["rect", "triangle", "ellipse", "arrow", "path"]);
 
+const ELLIPSE_SAMPLES = 32;
+
 export function canCombineSelection(scene: SerializableSceneState, nodeIds: NodeId[]): boolean {
   const eligible = nodeIds.filter((id) => {
     const node = scene.nodes[id];
@@ -22,64 +24,81 @@ export function canCombineSelection(scene: SerializableSceneState, nodeIds: Node
   return eligible.length >= 2;
 }
 
-function sampleWorldPoints(node: SceneNode): Point[] {
-  const m = composeNodeLocalToWorldMatrix(node);
-
-  if (node.type === "ellipse") {
-    const points: Point[] = [];
-    const cx = node.bounds.x + node.bounds.width / 2;
-    const cy = node.bounds.y + node.bounds.height / 2;
-    const rx = node.bounds.width / 2;
-    const ry = node.bounds.height / 2;
-    for (let i = 0; i < 16; i += 1) {
-      const angle = (i / 16) * Math.PI * 2;
-      points.push(
-        applyMat2DToPoint(m, {
-          x: cx + Math.cos(angle) * rx,
-          y: cy + Math.sin(angle) * ry,
-        }),
-      );
-    }
-    return points;
-  }
-
-  if ((node.type === "arrow" || node.type === "path") && node.data?.points?.length) {
-    return node.data.points.map((p) => applyMat2DToPoint(m, p));
-  }
-
-  return getRectCorners(node.bounds).map((p) => applyMat2DToPoint(m, p));
+function distance(a: Point, b: Point): number {
+  return Math.hypot(b.x - a.x, b.y - a.y);
 }
 
-function convexHull(points: Point[]): Point[] {
-  if (points.length <= 2) {
+function toWorldPoints(node: SceneNode, localPoints: Point[]): Point[] {
+  const m = composeNodeLocalToWorldMatrix(node);
+  return localPoints.map((p) => applyMat2DToPoint(m, p));
+}
+
+function closeContour(points: Point[]): Point[] {
+  if (points.length < 2) {
     return points;
   }
-
-  const sorted = [...points].sort((a, b) => (a.x === b.x ? a.y - b.y : a.x - b.x));
-
-  const cross = (o: Point, a: Point, b: Point) =>
-    (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
-
-  const lower: Point[] = [];
-  for (const p of sorted) {
-    while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) {
-      lower.pop();
-    }
-    lower.push(p);
+  const first = points[0];
+  const last = points[points.length - 1];
+  if (distance(first, last) < 0.5) {
+    return points;
   }
+  return [...points, { ...first }];
+}
 
-  const upper: Point[] = [];
-  for (let i = sorted.length - 1; i >= 0; i -= 1) {
-    const p = sorted[i];
-    while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) {
-      upper.pop();
+/** One closed outline per shape in world coordinates. */
+function getShapeWorldContour(node: SceneNode): Point[] {
+  const { bounds } = node;
+
+  switch (node.type) {
+    case "triangle": {
+      const local = [
+        { x: bounds.x + bounds.width / 2, y: bounds.y },
+        { x: bounds.x + bounds.width, y: bounds.y + bounds.height },
+        { x: bounds.x, y: bounds.y + bounds.height },
+      ];
+      return closeContour(toWorldPoints(node, local));
     }
-    upper.push(p);
+    case "ellipse": {
+      const cx = bounds.x + bounds.width / 2;
+      const cy = bounds.y + bounds.height / 2;
+      const rx = bounds.width / 2;
+      const ry = bounds.height / 2;
+      const local: Point[] = [];
+      for (let i = 0; i < ELLIPSE_SAMPLES; i += 1) {
+        const angle = (i / ELLIPSE_SAMPLES) * Math.PI * 2;
+        local.push({
+          x: cx + Math.cos(angle) * rx,
+          y: cy + Math.sin(angle) * ry,
+        });
+      }
+      return closeContour(toWorldPoints(node, local));
+    }
+    case "arrow": {
+      const pts = node.data?.points;
+      if (pts && pts.length >= 3) {
+        const world = toWorldPoints(node, pts);
+        if (distance(world[0], world[world.length - 1]) < 0.5) {
+          return world;
+        }
+      }
+      return closeContour(toWorldPoints(node, getRectCorners(bounds)));
+    }
+    case "path": {
+      const pts = node.data?.contours?.[0] ?? node.data?.points;
+      if (!pts || pts.length < 2) {
+        return closeContour(toWorldPoints(node, getRectCorners(bounds)));
+      }
+      const world = toWorldPoints(node, pts);
+      // Pencil / open strokes: do not connect last point to first (causes long stray segments).
+      if (distance(world[0], world[world.length - 1]) < 0.5 && world.length >= 3) {
+        return world;
+      }
+      return closeContour(toWorldPoints(node, getRectCorners(bounds)));
+    }
+    case "rect":
+    default:
+      return closeContour(toWorldPoints(node, getRectCorners(bounds)));
   }
-
-  lower.pop();
-  upper.pop();
-  return [...lower, ...upper];
 }
 
 function boundsFromPoints(points: Point[]): { x: number; y: number; width: number; height: number } {
@@ -103,7 +122,16 @@ function boundsFromPoints(points: Point[]): { x: number; y: number; width: numbe
   };
 }
 
-/** Merge 2+ shapes into one path (not a group). Uses convex hull of shape outlines. */
+function worldContoursToLocal(contours: Point[][], bounds: { x: number; y: number }): Point[][] {
+  return contours.map((contour) =>
+    contour.map((p) => ({
+      x: p.x - bounds.x,
+      y: p.y - bounds.y,
+    })),
+  );
+}
+
+/** Merge 2+ shapes into one path: each source shape keeps its own closed outline. */
 export function combineSelection(engine: CanvasEngine, nodeIds: NodeId[]): NodeId | null {
   const scene = engine.getSerializableState();
   const eligible = nodeIds.filter((id) => {
@@ -115,7 +143,7 @@ export function combineSelection(engine: CanvasEngine, nodeIds: NodeId[]): NodeI
     return null;
   }
 
-  const worldPoints: Point[] = [];
+  const worldContours: Point[][] = [];
   let fill = "#60a5fa";
   let stroke = "#1e293b";
   let strokeWidth = 2;
@@ -123,22 +151,21 @@ export function combineSelection(engine: CanvasEngine, nodeIds: NodeId[]): NodeI
   for (const id of eligible) {
     const node = scene.nodes[id];
     if (!node) continue;
-    worldPoints.push(...sampleWorldPoints(node));
+    const contour = getShapeWorldContour(node);
+    if (contour.length >= 3) {
+      worldContours.push(contour);
+    }
     if (node.style.fill) fill = node.style.fill;
     if (node.style.stroke) stroke = node.style.stroke;
     if (typeof node.style.strokeWidth === "number") strokeWidth = node.style.strokeWidth;
   }
 
-  const hull = convexHull(worldPoints);
-  if (hull.length < 3) {
+  if (worldContours.length < 2) {
     return null;
   }
 
-  const bounds = boundsFromPoints(hull);
-  const localPoints = hull.map((p) => ({
-    x: p.x - bounds.x,
-    y: p.y - bounds.y,
-  }));
+  const bounds = boundsFromPoints(worldContours.flat());
+  const localContours = worldContoursToLocal(worldContours, bounds);
 
   const newId = createNodeId();
   const combined: SceneNode = {
@@ -149,7 +176,8 @@ export function combineSelection(engine: CanvasEngine, nodeIds: NodeId[]): NodeI
     transform: createIdentityTransform(),
     style: { fill, stroke, strokeWidth, opacity: 0.92 },
     data: {
-      points: localPoints,
+      contours: localContours,
+      points: localContours[0],
       label: "Combined shape",
     },
   };

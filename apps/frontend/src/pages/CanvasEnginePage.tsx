@@ -1959,7 +1959,10 @@ export function CanvasEnginePage() {
     zoom: debug.cameraZoom,
   };
   const resizeHandles =
-    showHandles && selectedNode && !selectedNode.data?.points
+    showHandles &&
+    selectedNode &&
+    !selectedNode.data?.points &&
+    !(selectedNode.data?.contours && selectedNode.data.contours.length > 0)
       ? getResizeHandlesWorld(selectedNode)
       : [];
   const rotateHandle = showHandles && selectedNode

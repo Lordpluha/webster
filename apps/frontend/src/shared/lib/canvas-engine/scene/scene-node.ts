@@ -15,6 +15,8 @@ export interface SceneNodeData {
   fontFamily?: string;
   src?: string;
   points?: Point[];
+  /** Closed outlines for path nodes (each contour drawn separately). */
+  contours?: Point[][];
   eraseMarks?: Array<{ x: number; y: number; radius: number }>;
   groupId?: string;
   groupLabel?: string;
