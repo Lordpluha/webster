@@ -1,8 +1,22 @@
 import type { FC } from "react";
 import { useEffect, useMemo, useReducer, useState } from "react";
-import { ChevronDown, Eye, EyeOff, Layers, Lock, Unlock, Unlink } from "lucide-react";
+import {
+  ArrowDown,
+  ArrowUp,
+  ChevronDown,
+  ChevronsDown,
+  ChevronsUp,
+  Eye,
+  EyeOff,
+  Layers,
+  Lock,
+  Merge,
+  Unlock,
+  Unlink,
+} from "lucide-react";
 
-import type { SceneNode } from "@/shared/lib/canvas-engine";
+import type { SceneNode, SerializableSceneState } from "@/shared/lib/canvas-engine";
+import { canCombineSelection, combineSelection } from "@/shared/lib/editor/combine-nodes";
 import {
   canGroupSelection,
   canUngroupSelection,
@@ -13,6 +27,12 @@ import {
   setGroupLocked,
   ungroupSelection,
 } from "@/shared/lib/editor/layer-groups";
+import {
+  bringForward,
+  bringToFront,
+  sendBackward,
+  sendToBack,
+} from "@/shared/lib/editor/z-order";
 import { useOptionalEditorWorkspace } from "./editor-workspace-context";
 
 type LayerEntry = {
@@ -93,7 +113,7 @@ export const LayersPanel: FC = () => {
       return {
         rows: [] as DisplayRow[],
         panelOrderIds: [] as string[],
-        scene: null as ReturnType<typeof engine.getSerializableState> | null,
+        scene: null as SerializableSceneState | null,
       };
     }
 
@@ -160,6 +180,8 @@ export const LayersPanel: FC = () => {
 
   const canGroup = canGroupSelection(scene, selectedIds);
   const canUngroup = canUngroupSelection(scene, selectedIds);
+  const canCombine = canCombineSelection(scene, selectedIds);
+  const hasSelection = selectedIds.length > 0;
 
   const handleToggleVisibility = (node: SceneNode) => {
     const nextHidden = !node.data?.hidden;
@@ -415,6 +437,60 @@ export const LayersPanel: FC = () => {
           >
             <Unlink size={14} aria-hidden />
             Ungroup
+          </button>
+        </div>
+        <div className="mt-2 flex gap-1">
+          <button
+            type="button"
+            disabled={!canCombine}
+            onClick={() => combineSelection(engine, selectedIds)}
+            className="inline-flex flex-1 items-center justify-center gap-1 rounded-md border border-slate-200 px-2 py-1.5 text-xs font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+            title="Merge shapes into one path (Ctrl+Alt+C)"
+          >
+            <Merge size={14} aria-hidden />
+            Combine
+          </button>
+        </div>
+        <div className="mt-2 flex gap-1">
+          <button
+            type="button"
+            disabled={!hasSelection}
+            onClick={() => bringToFront(engine, selectedIds)}
+            className="inline-flex h-8 flex-1 items-center justify-center rounded-md border border-slate-200 text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+            title="Bring to front (Ctrl+Alt+])"
+            aria-label="Bring to front"
+          >
+            <ChevronsUp size={14} aria-hidden />
+          </button>
+          <button
+            type="button"
+            disabled={!hasSelection}
+            onClick={() => bringForward(engine, selectedIds)}
+            className="inline-flex h-8 flex-1 items-center justify-center rounded-md border border-slate-200 text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+            title="Bring forward (Ctrl+Shift+])"
+            aria-label="Bring forward"
+          >
+            <ArrowUp size={14} aria-hidden />
+          </button>
+          <button
+            type="button"
+            disabled={!hasSelection}
+            onClick={() => sendBackward(engine, selectedIds)}
+            className="inline-flex h-8 flex-1 items-center justify-center rounded-md border border-slate-200 text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+            title="Send backward (Ctrl+Shift+[)"
+            aria-label="Send backward"
+          >
+            <ArrowDown size={14} aria-hidden />
+          </button>
+          <button
+            type="button"
+            disabled={!hasSelection}
+            onClick={() => sendToBack(engine, selectedIds)}
+            className="inline-flex h-8 flex-1 items-center justify-center rounded-md border border-slate-200 text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+            title="Send to back (Ctrl+Alt+[)"
+            aria-label="Send to back"
+          >
+            <ChevronsDown size={14} aria-hidden />
           </button>
         </div>
       </div>

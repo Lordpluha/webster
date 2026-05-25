@@ -3,16 +3,27 @@ import { useMutation, useQuery } from "@apollo/client/react";
 import { useCallback, useEffect, useMemo, useRef, useState, type ClipboardEvent as ReactClipboardEvent, type DragEvent } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 
+import { CanvasContextMenu, type ContextMenuItem } from "@/components/editor/CanvasContextMenu";
 import { CanvasEditorLayout, EditorWorkspaceProvider } from "@/components/editor";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { PromptDialog } from "@/components/ui/PromptDialog";
 import { AUTOSAVE_PROJECT_MUTATION, PROJECT_QUERY } from "../graphql/projects.graphql";
 import { sceneStateFromProjectContent } from "@/shared/lib/editor/scene-from-project-content";
+import { canCombineSelection, combineSelection } from "@/shared/lib/editor/combine-nodes";
+import { formatToolHotkey, getToolFromHotkey } from "@/shared/lib/editor/editor-hotkeys";
 import {
+  canGroupSelection,
+  canUngroupSelection,
   getGroupedNodeIds,
   groupSelection,
   ungroupSelection,
 } from "@/shared/lib/editor/layer-groups";
+import {
+  bringForward,
+  bringToFront,
+  sendBackward,
+  sendToBack,
+} from "@/shared/lib/editor/z-order";
 import {
   applyTextStyleToNode,
   DEFAULT_TEXT_FONT_SIZE,
@@ -66,15 +77,15 @@ type CanvasToolUiItem = {
 type ResizeHandle = "nw" | "n" | "ne" | "e" | "se" | "s" | "sw" | "w";
 
 const TOOLBAR_TOOLS: CanvasToolUiItem[] = [
-  { id: "select", label: "Select", hint: "V", Icon: MousePointer2 },
-  { id: "pencil", label: "Pencil", hint: "B", Icon: Pencil },
-  { id: "eraser", label: "Eraser", hint: "E", Icon: Eraser },
-  { id: "text", label: "Text", hint: "T", Icon: Type },
-  { id: "rect", label: "Rect", hint: "R", Icon: Square },
-  { id: "triangle", label: "Triangle", hint: "G", Icon: Triangle },
-  { id: "ellipse", label: "Ellipse", hint: "O", Icon: Circle },
-  { id: "arrow", label: "Arrow", hint: "A", Icon: ArrowRight },
-  { id: "image", label: "Image", hint: "I", Icon: ImageIcon },
+  { id: "select", label: "Select", hint: formatToolHotkey("v"), Icon: MousePointer2 },
+  { id: "pencil", label: "Pencil", hint: formatToolHotkey("b"), Icon: Pencil },
+  { id: "eraser", label: "Eraser", hint: formatToolHotkey("e"), Icon: Eraser },
+  { id: "text", label: "Text", hint: formatToolHotkey("t"), Icon: Type },
+  { id: "rect", label: "Rect", hint: formatToolHotkey("r"), Icon: Square },
+  { id: "triangle", label: "Triangle", hint: formatToolHotkey("g"), Icon: Triangle },
+  { id: "ellipse", label: "Ellipse", hint: formatToolHotkey("o"), Icon: Circle },
+  { id: "arrow", label: "Arrow", hint: formatToolHotkey("a"), Icon: ArrowRight },
+  { id: "image", label: "Image", hint: formatToolHotkey("i"), Icon: ImageIcon },
 ];
 
 type DragState =
@@ -252,6 +263,7 @@ export function CanvasEnginePage() {
     screenWidth: number;
     screenHeight: number;
   } | null>(null);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
 
   const saveNow = useCallback(async () => {
     if (!projectId || standaloneMode) return;
@@ -731,19 +743,11 @@ export function CanvasEnginePage() {
       const key = event.key.toLowerCase();
       const isUndoRedo = hasModifier && (key === "z" || key === "y");
       const isSceneJsonShortcut = hasModifier && event.shiftKey && (key === "s" || key === "o");
-      if (!hasModifier && !event.shiftKey && !event.altKey) {
-        const hotkeyMap: Record<string, ToolName> = {
-          v: "select",
-          t: "text",
-          e: "eraser",
-          b: "pencil",
-        };
-        const nextTool = hotkeyMap[key];
-        if (nextTool) {
-          event.preventDefault();
-          engine.setTool(nextTool);
-          return;
-        }
+      const toolFromCombo = getToolFromHotkey(event);
+      if (toolFromCombo) {
+        event.preventDefault();
+        engine.setTool(toolFromCombo);
+        return;
       }
 
       if (hasModifier && key === "b") {
@@ -761,19 +765,43 @@ export function CanvasEnginePage() {
       const selectedNodeIds = runtime.selectedNodeIds;
       const hasSelection = selectedNodeIds.length > 0;
 
-      if (!hasModifier && !event.shiftKey && !event.altKey) {
-        const toolByKey: Record<string, ToolName> = {
-          v: "select",
-          t: "text",
-          e: "eraser",
-          b: "pencil",
-        };
-        const nextTool = toolByKey[key];
-        if (nextTool) {
-          event.preventDefault();
-          engine.setTool(nextTool);
-          return;
+      if (hasModifier && event.shiftKey && event.code === "BracketRight" && hasSelection) {
+        event.preventDefault();
+        bringForward(engine, selectedNodeIds);
+        return;
+      }
+
+      if (hasModifier && event.shiftKey && event.code === "BracketLeft" && hasSelection) {
+        event.preventDefault();
+        sendBackward(engine, selectedNodeIds);
+        return;
+      }
+
+      if (hasModifier && event.altKey && event.code === "BracketRight" && hasSelection) {
+        event.preventDefault();
+        bringToFront(engine, selectedNodeIds);
+        return;
+      }
+
+      if (hasModifier && event.altKey && event.code === "BracketLeft" && hasSelection) {
+        event.preventDefault();
+        sendToBack(engine, selectedNodeIds);
+        return;
+      }
+
+      if (hasModifier && event.altKey && key === "c" && hasSelection) {
+        event.preventDefault();
+        const scene = engine.getSerializableState();
+        if (canCombineSelection(scene, selectedNodeIds)) {
+          combineSelection(engine, selectedNodeIds);
+        } else {
+          pushToast({
+            title: "Cannot combine",
+            message: "Select 2+ shapes (rect, triangle, ellipse, arrow, path). Text and images are excluded.",
+            tone: "warning",
+          });
         }
+        return;
       }
 
       if (hasModifier && event.key.toLowerCase() === "z") {
@@ -846,6 +874,7 @@ export function CanvasEnginePage() {
 
       if (event.key === "Escape") {
         event.preventDefault();
+        setContextMenu(null);
         engine.setSelection([]);
         if (debug.activeTool !== "select") {
           engine.setTool("select");
@@ -951,7 +980,7 @@ export function CanvasEnginePage() {
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [debug.activeTool, engine]);
+  }, [debug.activeTool, engine, pushToast]);
 
   function handleCanvasPointerDown(event: React.PointerEvent<HTMLCanvasElement>): void {
     if (event.button !== 0) {
@@ -1782,6 +1811,144 @@ export function CanvasEnginePage() {
     return () => window.removeEventListener("paste", handleWindowPaste);
   }, [getImageFileFromClipboard, insertImageAtWorldPoint, isEditableElement, isEditorRoute]);
 
+  const deleteSelectedNodes = useCallback(() => {
+    const selectedNodeIds = engine.getRuntimeSnapshot().selectedNodeIds;
+    const scene = engine.getSerializableState();
+    const deletable = selectedNodeIds.filter((id) => !scene.nodes[id]?.data?.locked);
+    if (deletable.length === 0) {
+      return;
+    }
+    engine.batchUpdate(({ removeNode }) => {
+      for (const nodeId of deletable) {
+        removeNode(nodeId);
+      }
+    }, { history: { label: "delete-selection" } });
+    engine.setSelection(selectedNodeIds.filter((id) => scene.nodes[id]?.data?.locked));
+  }, [engine]);
+
+  const handleCanvasContextMenu = useCallback(
+    (event: React.MouseEvent<HTMLDivElement>) => {
+      event.preventDefault();
+      setContextMenu({ x: event.clientX, y: event.clientY });
+      canvasInteractionActiveRef.current = true;
+
+      const canvas = canvasRef.current;
+      const renderer = rendererRef.current;
+      if (!canvas || !renderer) {
+        return;
+      }
+
+      const point = getCanvasPointFromClient(canvas, event.clientX, event.clientY);
+      const worldPoint = renderer.screenToWorld(point);
+      const scene = engine.getSerializableState();
+      const hitId = pickTopMostNodeAtWorldPoint(scene, worldPoint);
+      const selected = engine.getRuntimeSnapshot().selectedNodeIds;
+
+      if (hitId) {
+        if (event.shiftKey) {
+          if (selected.includes(hitId)) {
+            engine.setSelection(selected.filter((id) => id !== hitId));
+          } else {
+            engine.setSelection([...selected, hitId]);
+          }
+        } else if (!selected.includes(hitId)) {
+          engine.setSelection([hitId]);
+        }
+      }
+    },
+    [engine],
+  );
+
+  const buildContextMenuItems = useCallback((): ContextMenuItem[] => {
+    const selectedNodeIds = engine.getRuntimeSnapshot().selectedNodeIds;
+    const hasSelection = selectedNodeIds.length > 0;
+    const scene = engine.getSerializableState();
+    const deletable = selectedNodeIds.filter((id) => !scene.nodes[id]?.data?.locked);
+    const canDelete = deletable.length > 0;
+    const canGroup = canGroupSelection(scene, selectedNodeIds);
+    const canUngroup = canUngroupSelection(scene, selectedNodeIds);
+    const canCombine = canCombineSelection(scene, selectedNodeIds);
+
+    const items: ContextMenuItem[] = [];
+
+    if (hasSelection) {
+      items.push(
+        {
+          id: "bring-front",
+          label: "Bring to front",
+          shortcut: "Ctrl+Alt+]",
+          onClick: () => bringToFront(engine, selectedNodeIds),
+        },
+        {
+          id: "bring-forward",
+          label: "Bring forward",
+          shortcut: "Ctrl+Shift+]",
+          onClick: () => bringForward(engine, selectedNodeIds),
+        },
+        {
+          id: "send-backward",
+          label: "Send backward",
+          shortcut: "Ctrl+Shift+[",
+          onClick: () => sendBackward(engine, selectedNodeIds),
+        },
+        {
+          id: "send-back",
+          label: "Send to back",
+          shortcut: "Ctrl+Alt+[",
+          onClick: () => sendToBack(engine, selectedNodeIds),
+        },
+        { id: "sep-z", type: "separator" },
+        {
+          id: "group",
+          label: "Group",
+          shortcut: "Ctrl+G",
+          disabled: !canGroup,
+          onClick: () => groupSelection(engine, selectedNodeIds),
+        },
+        {
+          id: "ungroup",
+          label: "Ungroup",
+          shortcut: "Ctrl+Shift+G",
+          disabled: !canUngroup,
+          onClick: () => ungroupSelection(engine, selectedNodeIds),
+        },
+        {
+          id: "combine",
+          label: "Combine shapes",
+          shortcut: "Ctrl+Alt+C",
+          disabled: !canCombine,
+          onClick: () => {
+            if (!combineSelection(engine, selectedNodeIds)) {
+              pushToast({
+                title: "Cannot combine",
+                message: "Select 2+ shapes (not text/images).",
+                tone: "warning",
+              });
+            }
+          },
+        },
+        { id: "sep-actions", type: "separator" },
+        {
+          id: "delete",
+          label: "Delete",
+          shortcut: "Del",
+          danger: true,
+          disabled: !canDelete,
+          onClick: deleteSelectedNodes,
+        },
+      );
+    } else {
+      items.push({
+        id: "hint",
+        label: "Select an object for actions",
+        disabled: true,
+        onClick: () => undefined,
+      });
+    }
+
+    return items;
+  }, [deleteSelectedNodes, engine, pushToast]);
+
   const runtimeSnapshot = engine.getRuntimeSnapshot();
   const selectedNodeId = runtimeSnapshot.selectedNodeIds.length === 1 ? runtimeSnapshot.selectedNodeIds[0] : null;
   const selectedNode = selectedNodeId ? engine.getSerializableState().nodes[selectedNodeId] : null;
@@ -1800,7 +1967,7 @@ export function CanvasEnginePage() {
     : null;
 
   const canvasSurface = (
-    <>
+    <div className="relative h-full w-full" onContextMenu={handleCanvasContextMenu}>
       <div className="absolute inset-0 bg-[radial-gradient(#cbd5e1_2px,transparent_2px)] bg-size-[16px_16px]" />
 
       {!standaloneMode && projectId && projectLoading ? (
@@ -1971,12 +2138,21 @@ export function CanvasEnginePage() {
           </div>
         </div>
       ) : null}
-    </>
+    </div>
   );
 
   if (standaloneMode) {
     return (
-      <main className="relative h-screen w-screen overflow-hidden bg-slate-100 font-sans">{canvasSurface}</main>
+      <>
+        <main className="relative h-screen w-screen overflow-hidden bg-slate-100 font-sans">{canvasSurface}</main>
+        <CanvasContextMenu
+          open={Boolean(contextMenu)}
+          x={contextMenu?.x ?? 0}
+          y={contextMenu?.y ?? 0}
+          items={buildContextMenuItems()}
+          onClose={() => setContextMenu(null)}
+        />
+      </>
     );
   }
 
@@ -1989,6 +2165,14 @@ export function CanvasEnginePage() {
           }
         />
       </EditorWorkspaceProvider>
+
+      <CanvasContextMenu
+        open={Boolean(contextMenu)}
+        x={contextMenu?.x ?? 0}
+        y={contextMenu?.y ?? 0}
+        items={buildContextMenuItems()}
+        onClose={() => setContextMenu(null)}
+      />
 
       <ConfirmDialog
         open={Boolean(pendingLeavePath)}

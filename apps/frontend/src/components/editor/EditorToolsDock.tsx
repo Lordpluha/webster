@@ -15,19 +15,26 @@ import {
 } from "lucide-react";
 
 import { ENGINE_SHAPE_TOOLS, type ToolName } from "@/shared/lib/canvas-engine";
+import { formatToolHotkey } from "@/shared/lib/editor/editor-hotkeys";
 import { focusRingOnLightClass } from "@/shared/lib/a11y";
 import { useOptionalEditorWorkspace } from "./editor-workspace-context";
 
 const dockBtnBase = `inline-flex h-10 w-10 items-center justify-center rounded-xl border transition ${focusRingOnLightClass}`;
 
-const PRIMARY_DOCK_TOOLS: Array<{ id: ToolName; label: string; Icon: FC<{ className?: string }> }> = [
-  { id: "select", label: "Select", Icon: MousePointer2 },
-  { id: "pencil", label: "Pencil", Icon: Pencil },
-  { id: "eraser", label: "Eraser", Icon: Eraser },
-  { id: "text", label: "Text", Icon: Type },
-  { id: "arrow", label: "Arrow", Icon: ArrowRight },
-  { id: "image", label: "Image", Icon: Image },
+const PRIMARY_DOCK_TOOLS: Array<{ id: ToolName; label: string; hotkey: string; Icon: FC<{ className?: string }> }> = [
+  { id: "select", label: "Select", hotkey: "v", Icon: MousePointer2 },
+  { id: "pencil", label: "Pencil", hotkey: "b", Icon: Pencil },
+  { id: "eraser", label: "Eraser", hotkey: "e", Icon: Eraser },
+  { id: "text", label: "Text", hotkey: "t", Icon: Type },
+  { id: "arrow", label: "Arrow", hotkey: "a", Icon: ArrowRight },
+  { id: "image", label: "Image", hotkey: "i", Icon: Image },
 ];
+
+const SHAPE_HOTKEY: Record<string, string> = {
+  rect: "r",
+  triangle: "g",
+  ellipse: "o",
+};
 
 const SHAPE_ICONS: Record<string, FC<{ className?: string }>> = {
   rect: Square,
@@ -82,13 +89,13 @@ export const EditorToolsDock: FC = () => {
         aria-label="Canvas tools"
         className="pointer-events-auto inline-flex items-center gap-1 rounded-2xl border border-violet-200/80 bg-white/95 px-2 py-2 shadow-xl shadow-violet-300/25 backdrop-blur-sm"
       >
-        {PRIMARY_DOCK_TOOLS.map(({ id, label, Icon }) => {
+        {PRIMARY_DOCK_TOOLS.map(({ id, label, hotkey, Icon }) => {
           const isActive = activeTool === id;
           return (
             <button
               key={id}
               type="button"
-              title={label}
+              title={`${label} (${formatToolHotkey(hotkey)})`}
               aria-label={label}
               aria-pressed={isActive}
               onClick={() => {
@@ -137,12 +144,14 @@ export const EditorToolsDock: FC = () => {
               {ENGINE_SHAPE_TOOLS.map((tool) => {
                 const Icon = SHAPE_ICONS[tool.id] ?? Square;
                 const isActive = activeTool === tool.id;
+                const shapeKey = SHAPE_HOTKEY[tool.id];
                 return (
                   <button
                     key={tool.id}
                     type="button"
                     role="menuitem"
                     aria-label={tool.label}
+                    title={shapeKey ? `${tool.label} (${formatToolHotkey(shapeKey)})` : tool.label}
                     className={
                       isActive
                         ? `flex w-full items-center gap-2 bg-blue-50 px-3 py-2 text-left text-sm font-medium text-blue-800 ${focusRingOnLightClass}`
