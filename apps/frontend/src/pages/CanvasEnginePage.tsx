@@ -9,6 +9,11 @@ import { PromptDialog } from "@/components/ui/PromptDialog";
 import { AUTOSAVE_PROJECT_MUTATION, PROJECT_QUERY } from "../graphql/projects.graphql";
 import { sceneStateFromProjectContent } from "@/shared/lib/editor/scene-from-project-content";
 import {
+  getGroupedNodeIds,
+  groupSelection,
+  ungroupSelection,
+} from "@/shared/lib/editor/layer-groups";
+import {
   applyTextStyleToNode,
   DEFAULT_TEXT_FONT_SIZE,
 } from "@/shared/lib/canvas-engine/utils/text-style";
@@ -804,25 +809,15 @@ export function CanvasEnginePage() {
         return;
       }
 
+      if (hasModifier && event.shiftKey && event.key.toLowerCase() === "g" && hasSelection) {
+        event.preventDefault();
+        ungroupSelection(engine, selectedNodeIds);
+        return;
+      }
+
       if (hasModifier && !event.shiftKey && event.key.toLowerCase() === "g" && hasSelection) {
         event.preventDefault();
-        const scene = engine.getSerializableState();
-        const eligible = selectedNodeIds.filter((id) => !scene.nodes[id]?.data?.locked);
-        if (eligible.length === 0) {
-          return;
-        }
-        const groupId = `group-${Date.now()}`;
-        engine.batchUpdate(({ updateNode }) => {
-          for (const nodeId of eligible) {
-            updateNode(nodeId, (prevNode) => ({
-              ...prevNode,
-              data: {
-                ...(prevNode.data ?? {}),
-                groupId,
-              },
-            }));
-          }
-        }, { history: { label: "group", mergeKey: `group:${groupId}` } });
+        groupSelection(engine, selectedNodeIds);
         return;
       }
 
@@ -2239,31 +2234,6 @@ function worldToScreen(point: Point, camera: { x: number; y: number; zoom: numbe
     x: point.x * camera.zoom + camera.x,
     y: point.y * camera.zoom + camera.y,
   };
-}
-
-function getGroupedNodeIds(scene: SerializableSceneState, nodeIds: NodeId[]): NodeId[] {
-  const result = new Set<NodeId>();
-  const groupIds = new Set<string>();
-
-  for (const id of nodeIds) {
-    const node = scene.nodes[id];
-    if (!node) continue;
-    result.add(id);
-    if (node.data?.groupId) {
-      groupIds.add(node.data.groupId);
-    }
-  }
-
-  if (groupIds.size > 0) {
-    for (const id of scene.nodeOrder) {
-      const node = scene.nodes[id];
-      if (node?.data?.groupId && groupIds.has(node.data.groupId)) {
-        result.add(id);
-      }
-    }
-  }
-
-  return Array.from(result);
 }
 
 function getCanvasPoint(event: Pick<React.PointerEvent<HTMLCanvasElement>, "clientX" | "clientY" | "currentTarget"> | Pick<React.MouseEvent<HTMLCanvasElement>, "clientX" | "clientY" | "currentTarget">): Point {
