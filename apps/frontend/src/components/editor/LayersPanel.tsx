@@ -10,13 +10,11 @@ import {
   EyeOff,
   Layers,
   Lock,
-  Merge,
   Unlock,
   Unlink,
 } from "lucide-react";
 
 import type { SceneNode, SerializableSceneState } from "@/shared/lib/canvas-engine";
-import { canCombineSelection, combineSelection } from "@/shared/lib/editor/combine-nodes";
 import {
   canGroupSelection,
   canUngroupSelection,
@@ -180,7 +178,6 @@ export const LayersPanel: FC = () => {
 
   const canGroup = canGroupSelection(scene, selectedIds);
   const canUngroup = canUngroupSelection(scene, selectedIds);
-  const canCombine = canCombineSelection(scene, selectedIds);
   const hasSelection = selectedIds.length > 0;
 
   const handleToggleVisibility = (node: SceneNode) => {
@@ -437,18 +434,6 @@ export const LayersPanel: FC = () => {
           >
             <Unlink size={14} aria-hidden />
             Ungroup
-          </button>
-        </div>
-        <div className="mt-2 flex gap-1">
-          <button
-            type="button"
-            disabled={!canCombine}
-            onClick={() => combineSelection(engine, selectedIds)}
-            className="inline-flex flex-1 items-center justify-center gap-1 rounded-md border border-slate-200 px-2 py-1.5 text-xs font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
-            title="Merge shapes into one path (Ctrl+Alt+C)"
-          >
-            <Merge size={14} aria-hidden />
-            Combine
           </button>
         </div>
         <div className="mt-2 flex gap-1">

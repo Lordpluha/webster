@@ -1,6 +1,6 @@
 import type { ToolName } from "@/shared/lib/canvas-engine";
 
-/** Tool shortcuts use Alt+Shift+letter (not single keys). */
+/** Tool shortcuts: Caps Lock on + Shift + letter. */
 export const TOOL_HOTKEY_BY_KEY: Record<string, ToolName> = {
   v: "select",
   t: "text",
@@ -14,11 +14,11 @@ export const TOOL_HOTKEY_BY_KEY: Record<string, ToolName> = {
 };
 
 export function formatToolHotkey(key: string): string {
-  return `Alt+Shift+${key.toUpperCase()}`;
+  return `Caps+Shift+${key.toUpperCase()}`;
 }
 
 export function getToolFromHotkey(event: KeyboardEvent): ToolName | null {
-  if (!event.altKey || !event.shiftKey || event.ctrlKey || event.metaKey) {
+  if (!event.getModifierState("CapsLock") || !event.shiftKey || event.ctrlKey || event.metaKey || event.altKey) {
     return null;
   }
   return TOOL_HOTKEY_BY_KEY[event.key.toLowerCase()] ?? null;

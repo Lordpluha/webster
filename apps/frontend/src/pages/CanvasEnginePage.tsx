@@ -9,7 +9,6 @@ import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { PromptDialog } from "@/components/ui/PromptDialog";
 import { AUTOSAVE_PROJECT_MUTATION, PROJECT_QUERY } from "../graphql/projects.graphql";
 import { sceneStateFromProjectContent } from "@/shared/lib/editor/scene-from-project-content";
-import { canCombineSelection, combineSelection } from "@/shared/lib/editor/combine-nodes";
 import { formatToolHotkey, getToolFromHotkey } from "@/shared/lib/editor/editor-hotkeys";
 import {
   canGroupSelection,
@@ -786,21 +785,6 @@ export function CanvasEnginePage() {
       if (hasModifier && event.altKey && event.code === "BracketLeft" && hasSelection) {
         event.preventDefault();
         sendToBack(engine, selectedNodeIds);
-        return;
-      }
-
-      if (hasModifier && event.altKey && key === "c" && hasSelection) {
-        event.preventDefault();
-        const scene = engine.getSerializableState();
-        if (canCombineSelection(scene, selectedNodeIds)) {
-          combineSelection(engine, selectedNodeIds);
-        } else {
-          pushToast({
-            title: "Cannot combine",
-            message: "Select 2+ shapes (rect, triangle, ellipse, arrow, path). Text and images are excluded.",
-            tone: "warning",
-          });
-        }
         return;
       }
 
@@ -1867,8 +1851,6 @@ export function CanvasEnginePage() {
     const canDelete = deletable.length > 0;
     const canGroup = canGroupSelection(scene, selectedNodeIds);
     const canUngroup = canUngroupSelection(scene, selectedNodeIds);
-    const canCombine = canCombineSelection(scene, selectedNodeIds);
-
     const items: ContextMenuItem[] = [];
 
     if (hasSelection) {
@@ -1911,21 +1893,6 @@ export function CanvasEnginePage() {
           shortcut: "Ctrl+Shift+G",
           disabled: !canUngroup,
           onClick: () => ungroupSelection(engine, selectedNodeIds),
-        },
-        {
-          id: "combine",
-          label: "Combine shapes",
-          shortcut: "Ctrl+Alt+C",
-          disabled: !canCombine,
-          onClick: () => {
-            if (!combineSelection(engine, selectedNodeIds)) {
-              pushToast({
-                title: "Cannot combine",
-                message: "Select 2+ shapes (not text/images).",
-                tone: "warning",
-              });
-            }
-          },
         },
         { id: "sep-actions", type: "separator" },
         {
