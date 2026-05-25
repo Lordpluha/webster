@@ -1,4 +1,5 @@
 import { Args, Context, Mutation, Resolver } from "@nestjs/graphql";
+import { UnauthorizedException } from "@nestjs/common";
 import type { Response } from "express";
 
 import { clearAuthCookies, setAuthCookies } from "../../infra/common/utils/cookies";
@@ -50,7 +51,7 @@ export class AuthResolver {
   async refreshToken(@Context() ctx: GqlContext) {
     const token = (ctx.req as any).cookies?.refresh_token;
     if (!token) {
-      throw new Error("No refresh token");
+      throw new UnauthorizedException("No refresh token");
     }
     const tokens = await this.authService.refreshToken(token);
     setAuthCookies(ctx.res, this.authService.configService, tokens.accessToken, tokens.refreshToken, this.authService.refreshDays);

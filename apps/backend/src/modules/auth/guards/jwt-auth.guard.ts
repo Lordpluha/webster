@@ -1,18 +1,14 @@
 import { type CanActivate, type ExecutionContext, Injectable, UnauthorizedException } from "@nestjs/common";
 import { GqlExecutionContext } from "@nestjs/graphql";
-import { JwtService } from "@nestjs/jwt";
 import type { Request } from "express";
 
-import { UsersService } from "../../users/users.service";
+import { AuthService } from "../auth.service";
 
 type RequestWithAuth = Request & { user?: unknown; cookies: Record<string, string> };
 
 @Injectable()
 export class JwtAuthGuard implements CanActivate {
-  constructor(
-    private readonly jwtService: JwtService,
-    private readonly usersService: UsersService,
-  ) {}
+  constructor(private readonly authService: AuthService) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const req = this.getRequest(context);
@@ -22,13 +18,8 @@ export class JwtAuthGuard implements CanActivate {
       throw new UnauthorizedException("Missing authentication token");
     }
 
-    try {
-      const payload = this.jwtService.verify(token);
-      req.user = await this.usersService.findById(payload.sub);
-      return true;
-    } catch {
-      throw new UnauthorizedException("Invalid or expired token");
-    }
+    req.user = await this.authService.validateSession(token);
+    return true;
   }
 
   private getRequest(context: ExecutionContext): RequestWithAuth {

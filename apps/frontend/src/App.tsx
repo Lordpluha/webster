@@ -1,5 +1,6 @@
 import { Navigate, Route, Routes, useSearchParams } from "react-router-dom";
 
+import { GuestRoute } from "./components/GuestRoute.tsx";
 import { PrivateRoute } from "./components/PrivateRoute.tsx";
 import { CanvasEnginePage } from "./pages/CanvasEnginePage.tsx";
 import { EditorPage } from "./pages/EditorPage.tsx";
@@ -22,8 +23,8 @@ export default function App() {
     <AppLayout>
       <Routes>
         <Route path="/" element={<HomePage />} />
-        <Route path="/login" element={<LoginPage />} />
-        <Route path="/register" element={<RegisterPage />} />
+        <Route path="/login" element={<GuestRoute><LoginPage /></GuestRoute>} />
+        <Route path="/register" element={<GuestRoute><RegisterPage /></GuestRoute>} />
         <Route path="/verify-email" element={<VerifyEmailPage />} />
         <Route path="/reset-password" element={<ResetPasswordPage />} />
         <Route path="/magic-link" element={<MagicLinkPage />} />
