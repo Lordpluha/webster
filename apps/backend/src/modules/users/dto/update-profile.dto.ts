@@ -1,5 +1,5 @@
 import { Field, InputType } from "@nestjs/graphql";
-import { IsOptional, IsString, IsUrl, MinLength } from "class-validator";
+import { IsOptional, IsString, MinLength } from "class-validator";
 
 @InputType()
 export class UpdateProfileDto {
@@ -17,6 +17,11 @@ export class UpdateProfileDto {
 
   @Field({ nullable: true })
   @IsOptional()
-  @IsUrl()
+  @IsString()
   avatarUrl?: string;
+
+  @Field({ nullable: true })
+  @IsOptional()
+  @IsString()
+  avatarPresetId?: string;
 }

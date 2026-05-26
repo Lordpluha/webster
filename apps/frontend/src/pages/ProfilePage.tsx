@@ -11,7 +11,10 @@ import {
   UPDATE_PROFILE_MUTATION,
 } from "../graphql/auth.graphql";
 import { useAuthStore } from "../shared/stores/auth.store";
+import { AvatarPicker } from "@/components/profile/AvatarPicker";
+import { UserAvatar } from "@/components/profile/UserAvatar";
 import { TwoFactorSettings } from "@/components/profile/TwoFactorSettings";
+import { resolveAvatarSrc } from "@/shared/lib/resolve-avatar-src";
 import { useToastStore } from "@/shared/stores/toast.store";
 
 type Modal = "edit" | "password" | null;
@@ -20,7 +23,7 @@ export function ProfilePage() {
   const navigate = useNavigate();
   const clearUser = useAuthStore((state) => state.clearUser);
   const pushToast = useToastStore((state) => state.pushToast);
-  const { data, loading, error } = useQuery(GET_CURRENT_USER);
+  const { data, loading, error, refetch } = useQuery(GET_CURRENT_USER);
   const [modal, setModal] = useState<Modal>(null);
   const [editError, setEditError] = useState("");
   const [passwordError, setPasswordError] = useState("");
@@ -143,7 +146,33 @@ export function ProfilePage() {
   return (
     <AppShell title="Your account" subtitle="Profile">
         <section className="glass-card rounded-2xl p-6">
-          <div className="grid gap-6 md:grid-cols-2">
+          <AvatarPicker
+            avatarUrl={user.avatarUrl}
+            avatarPresetId={user.avatarPresetId}
+            firstName={user.firstName}
+            lastName={user.lastName}
+            onUpdated={() => {
+              void refetch();
+            }}
+          />
+        </section>
+
+        <section className="glass-card mt-6 rounded-2xl p-6">
+          <div className="flex items-center gap-4 border-b border-white/10 pb-6">
+            <UserAvatar
+              src={resolveAvatarSrc(user.avatarUrl, user.avatarPresetId)}
+              firstName={user.firstName}
+              lastName={user.lastName}
+              size="lg"
+            />
+            <div>
+              <p className="text-lg font-semibold text-white">
+                {user.firstName} {user.lastName}
+              </p>
+              <p className="text-sm text-violet-200/70">{user.email}</p>
+            </div>
+          </div>
+          <div className="mt-6 grid gap-6 md:grid-cols-2">
             <div>
               <p className="text-sm text-violet-200/70">Name</p>
               <p className="mt-2 text-lg font-semibold">

@@ -2,6 +2,8 @@ import { Field, ID, ObjectType } from "@nestjs/graphql";
 import { Prop, Schema, SchemaFactory } from "@nestjs/mongoose";
 import { Document, Types } from "mongoose";
 
+import { ShareLinkRole } from "../share-link-role.enum";
+
 @ObjectType()
 @Schema({ timestamps: true })
 export class ShareLinkEntity extends Document {
@@ -27,6 +29,10 @@ export class ShareLinkEntity extends Document {
   @Field()
   @Prop({ default: false, index: true })
   isRevoked!: boolean;
+
+  @Field(() => ShareLinkRole)
+  @Prop({ type: String, enum: ShareLinkRole, default: ShareLinkRole.VIEWER })
+  role!: ShareLinkRole;
 
   @Field()
   createdAt!: Date;

@@ -4,7 +4,6 @@ import { useMutation } from "@apollo/client/react";
 import { useNavigate } from "react-router-dom";
 import { Download, FileJson, Image as ImageIcon, Save, Share2 } from "lucide-react";
 
-import { CREATE_SHARE_LINK_MUTATION } from "@/graphql/projects.graphql";
 import {
   CREATE_USER_TEMPLATE_MUTATION,
   USER_TEMPLATES_QUERY,
@@ -13,10 +12,10 @@ import { serializeSceneToJson, type ProjectExportFormat } from "@/shared/lib/can
 import { useOptionalEditorWorkspace } from "./editor-workspace-context";
 import { useToastStore } from "@/shared/stores/toast.store";
 import { BlockingOverlay } from "@/components/ui/BlockingOverlay";
+import { ShareLinkDialog } from "@/components/editor/ShareLinkDialog";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { PromptDialog } from "@/components/ui/PromptDialog";
 import { focusRingOnDarkClass } from "@/shared/lib/a11y";
-import { copyTextToClipboard } from "@/shared/lib/copy-to-clipboard";
 import { formatDateTime } from "@/shared/lib/format-datetime";
 
 const footerBtnClass = `flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-violet-100 transition-colors hover:bg-white/10 disabled:opacity-50 ${focusRingOnDarkClass}`;
@@ -37,9 +36,9 @@ export const EditorFooter: FC = () => {
   const [busy, setBusy] = useState<string | null>(null);
   const [templatePromptOpen, setTemplatePromptOpen] = useState(false);
   const [openTemplatesConfirm, setOpenTemplatesConfirm] = useState(false);
+  const [shareDialogOpen, setShareDialogOpen] = useState(false);
   const pushToast = useToastStore((state) => state.pushToast);
 
-  const [createShareLink] = useMutation(CREATE_SHARE_LINK_MUTATION);
   const [createUserTemplate] = useMutation(CREATE_USER_TEMPLATE_MUTATION, {
     refetchQueries: [{ query: USER_TEMPLATES_QUERY }],
   });
@@ -106,32 +105,9 @@ export const EditorFooter: FC = () => {
     }
   };
 
-  const handleShare = async () => {
+  const handleShare = () => {
     if (!pid) return;
-    setBusy("share");
-    try {
-      const res = await createShareLink({ variables: { projectId: pid, expiresInHours: 72 } });
-      const url = (res.data as { createShareLink?: { url?: string } })?.createShareLink?.url;
-      if (url) {
-        const shareUrl = url.startsWith("http") ? url : `${window.location.origin}${url}`;
-        const copied = await copyTextToClipboard(shareUrl);
-        pushToast({
-          title: copied ? "View-only link copied" : "View-only share link",
-          message: copied
-            ? "Anyone with the link can view but not edit."
-            : `Copy this link manually: ${shareUrl}`,
-          tone: "success",
-        });
-      }
-    } catch (e) {
-      pushToast({
-        title: "Share failed",
-        message: e instanceof Error ? e.message : "Share link failed",
-        tone: "error",
-      });
-    } finally {
-      setBusy(null);
-    }
+    setShareDialogOpen(true);
   };
 
   const handleSaveTemplate = async (title: string) => {
@@ -280,6 +256,10 @@ export const EditorFooter: FC = () => {
           navigate("/templates");
         }}
       />
+
+      {pid ? (
+        <ShareLinkDialog open={shareDialogOpen} projectId={pid} onClose={() => setShareDialogOpen(false)} />
+      ) : null}
     </footer>
   );
 };

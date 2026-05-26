@@ -31,8 +31,19 @@ export const GET_CURRENT_USER = gql`
       email
       firstName
       lastName
+      avatarUrl
+      avatarPresetId
       isEmailVerified
       isTwoFactorEnabled
+    }
+  }
+`;
+
+export const AVATAR_PRESETS_QUERY = gql`
+  query AvatarPresets {
+    avatarPresets {
+      id
+      url
     }
   }
 `;
@@ -108,6 +119,8 @@ export const UPDATE_PROFILE_MUTATION = gql`
       firstName
       lastName
       email
+      avatarUrl
+      avatarPresetId
     }
   }
 `;

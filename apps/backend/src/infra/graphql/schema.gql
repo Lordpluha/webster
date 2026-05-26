@@ -8,11 +8,22 @@ type UserEntity {
   firstName: String!
   lastName: String!
   avatarUrl: String
+  avatarPresetId: String
   isEmailVerified: Boolean!
   isTwoFactorEnabled: Boolean!
   oauthProvider: OAuthProvider
   createdAt: DateTime!
   updatedAt: DateTime!
+}
+
+type AvatarPreset {
+  id: String!
+  url: String!
+}
+
+enum ShareLinkRole {
+  VIEWER
+  EDITOR
 }
 
 enum OAuthProvider {
@@ -55,7 +66,23 @@ scalar JSON
 type ShareLinkResponse {
   token: String!
   url: String!
+  role: ShareLinkRole!
   expiresAt: DateTime
+}
+
+type ShareLinkInfo {
+  token: String!
+  role: ShareLinkRole!
+  isRevoked: Boolean!
+  expiresAt: DateTime
+  createdAt: DateTime!
+}
+
+type SharedProjectAccess {
+  project: ProjectEntity!
+  role: ShareLinkRole!
+  canEdit: Boolean!
+  token: String!
 }
 
 type ExportAssetResponse {
@@ -107,7 +134,9 @@ type Query {
   versions(projectId: ID!): [ProjectVersionEntity!]!
   baseTemplates: [TemplateEntity!]!
   userTemplates: [TemplateEntity!]!
-  resolveShareLink(token: String!): ProjectEntity!
+  resolveShareLink(token: String!): SharedProjectAccess!
+  avatarPresets: [AvatarPreset!]!
+  projectShareLinks(projectId: ID!): [ShareLinkInfo!]!
 }
 
 input ProjectsPaginationDto {
@@ -142,7 +171,10 @@ type Mutation {
   updateUserTemplate(id: ID!, input: UpdateUserTemplateDto!): TemplateEntity!
   deleteUserTemplate(id: ID!): Boolean!
   createProjectFromTemplate(templateId: ID!, title: String): ProjectEntity!
-  createShareLink(projectId: ID!, expiresInHours: Float): ShareLinkResponse!
+  createShareLink(projectId: ID!, expiresInHours: Float, role: ShareLinkRole): ShareLinkResponse!
+  updateShareLinkRole(token: String!, role: ShareLinkRole!): ShareLinkInfo!
+  revokeShareLink(token: String!): Boolean!
+  autosaveSharedProject(token: String!, content: JSON!): ProjectEntity!
   exportPng(projectId: ID!): ExportAssetResponse!
   exportJpg(projectId: ID!): ExportAssetResponse!
   exportPdf(projectId: ID!): ExportAssetResponse!
@@ -153,6 +185,7 @@ input UpdateProfileDto {
   firstName: String
   lastName: String
   avatarUrl: String
+  avatarPresetId: String
 }
 
 input RegisterDto {

@@ -1,6 +1,7 @@
-import { Field, ObjectType } from "@nestjs/graphql";
+import { Field, ID, ObjectType } from "@nestjs/graphql";
 
 import { ProjectEntity } from "../projects/entities/project.entity";
+import { ShareLinkRole } from "./share-link-role.enum";
 
 @ObjectType()
 export class ShareLinkResponse {
@@ -10,8 +11,44 @@ export class ShareLinkResponse {
   @Field()
   url!: string;
 
+  @Field(() => ShareLinkRole)
+  role!: ShareLinkRole;
+
   @Field(() => Date, { nullable: true })
   expiresAt?: Date;
+}
+
+@ObjectType()
+export class ShareLinkInfo {
+  @Field()
+  token!: string;
+
+  @Field(() => ShareLinkRole)
+  role!: ShareLinkRole;
+
+  @Field()
+  isRevoked!: boolean;
+
+  @Field(() => Date, { nullable: true })
+  expiresAt?: Date | null;
+
+  @Field()
+  createdAt!: Date;
+}
+
+@ObjectType()
+export class SharedProjectAccess {
+  @Field(() => ProjectEntity)
+  project!: ProjectEntity;
+
+  @Field(() => ShareLinkRole)
+  role!: ShareLinkRole;
+
+  @Field()
+  canEdit!: boolean;
+
+  @Field()
+  token!: string;
 }
 
 @ObjectType()
@@ -24,10 +61,4 @@ export class ExportAssetResponse {
 
   @Field()
   url!: string;
-}
-
-@ObjectType()
-export class SharedProjectResponse {
-  @Field(() => ProjectEntity)
-  project!: ProjectEntity;
 }

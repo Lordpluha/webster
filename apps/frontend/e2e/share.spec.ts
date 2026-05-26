@@ -24,13 +24,18 @@ test.describe("Share page (view only)", () => {
       ...guestMeHandler,
       ResolveShareLink: () => ({
         resolveShareLink: {
-          id: "proj-share",
-          userId: "other-user",
-          title: "Shared board",
-          width: 800,
-          height: 600,
-          content: sharedScene,
-          updatedAt: new Date().toISOString(),
+          token: "demo-token",
+          role: "VIEWER",
+          canEdit: false,
+          project: {
+            id: "proj-share",
+            userId: "other-user",
+            title: "Shared board",
+            width: 800,
+            height: 600,
+            content: sharedScene,
+            updatedAt: new Date().toISOString(),
+          },
         },
       }),
     });

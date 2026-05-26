@@ -2,6 +2,7 @@ import { Args, Mutation, Query, Resolver } from "@nestjs/graphql";
 
 import { CurrentUser } from "../auth/decorators/current-user.decorator";
 import { UseAuth } from "../auth/decorators/use-auth.decorator";
+import { AvatarPreset } from "./dto/avatar-preset.type";
 import { UpdateProfileDto } from "./dto/update-profile.dto";
 import { UserEntity } from "./entities/user.entity";
 import { UsersService } from "./users.service";
@@ -14,6 +15,11 @@ export class UsersResolver {
   @UseAuth()
   me(@CurrentUser() user: UserEntity) {
     return user;
+  }
+
+  @Query(() => [AvatarPreset])
+  avatarPresets() {
+    return this.usersService.getAvatarPresets();
   }
 
   @Mutation(() => UserEntity)

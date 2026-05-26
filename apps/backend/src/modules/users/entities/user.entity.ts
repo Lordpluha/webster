@@ -35,6 +35,10 @@ export class UserEntity extends Document {
   @Prop()
   avatarUrl?: string;
 
+  @Field({ nullable: true })
+  @Prop()
+  avatarPresetId?: string;
+
   @Field()
   @Prop({ default: false })
   isEmailVerified!: boolean;

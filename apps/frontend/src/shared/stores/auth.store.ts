@@ -6,6 +6,8 @@ export type AuthUser = {
   email: string;
   firstName: string;
   lastName: string;
+  avatarUrl?: string | null;
+  avatarPresetId?: string | null;
   isEmailVerified: boolean;
   isTwoFactorEnabled: boolean;
 };

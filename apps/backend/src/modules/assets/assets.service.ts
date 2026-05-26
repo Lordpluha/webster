@@ -13,8 +13,14 @@ import { join } from "node:path";
 import { PDFDocument, StandardFonts } from "pdf-lib";
 
 import { ProjectEntity } from "../projects/entities/project.entity";
-import { ExportAssetResponse, ShareLinkResponse } from "./assets.types";
+import {
+  ExportAssetResponse,
+  SharedProjectAccess,
+  ShareLinkInfo,
+  ShareLinkResponse,
+} from "./assets.types";
 import { ShareLinkEntity } from "./entities/share-link.entity";
+import { ShareLinkRole } from "./share-link-role.enum";
 import { UploadAssetEntity } from "./entities/upload-asset.entity";
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
@@ -73,6 +79,7 @@ export class AssetsService {
     projectId: string,
     userId: string,
     expiresInHours?: number,
+    role: ShareLinkRole = ShareLinkRole.VIEWER,
   ): Promise<ShareLinkResponse> {
     await this.assertProjectOwnership(projectId, userId);
 
@@ -88,6 +95,7 @@ export class AssetsService {
       userId: new Types.ObjectId(userId),
       expiresAt,
       isRevoked: false,
+      role,
     });
 
     const frontendBase = this.config
@@ -98,10 +106,90 @@ export class AssetsService {
       token,
       url: `${frontendBase}/share/${token}`,
       expiresAt: expiresAt ?? undefined,
+      role,
     };
   }
 
+  async listProjectShareLinks(projectId: string, userId: string): Promise<ShareLinkInfo[]> {
+    await this.assertProjectOwnership(projectId, userId);
+
+    const links = await this.shareLinkModel
+      .find({ projectId: new Types.ObjectId(projectId), isRevoked: false })
+      .sort({ createdAt: -1 })
+      .exec();
+
+    return links.map((link) => ({
+      token: link.token,
+      role: link.role ?? ShareLinkRole.VIEWER,
+      isRevoked: link.isRevoked,
+      expiresAt: link.expiresAt ?? null,
+      createdAt: link.createdAt,
+    }));
+  }
+
+  async updateShareLinkRole(
+    token: string,
+    userId: string,
+    role: ShareLinkRole,
+  ): Promise<ShareLinkInfo> {
+    const link = await this.findOwnedShareLink(token, userId);
+    link.role = role;
+    await link.save();
+
+    return {
+      token: link.token,
+      role: link.role,
+      isRevoked: link.isRevoked,
+      expiresAt: link.expiresAt ?? null,
+      createdAt: link.createdAt,
+    };
+  }
+
+  async revokeShareLink(token: string, userId: string): Promise<boolean> {
+    const link = await this.findOwnedShareLink(token, userId);
+    link.isRevoked = true;
+    await link.save();
+    return true;
+  }
+
+  async resolveShareLinkAccess(token: string): Promise<SharedProjectAccess> {
+    const link = await this.findActiveShareLink(token);
+
+    const project = await this.projectModel
+      .findOne({ _id: link.projectId, isDeleted: false })
+      .exec();
+    if (!project) throw new NotFoundException("Project not found");
+
+    const role = link.role ?? ShareLinkRole.VIEWER;
+
+    return {
+      project,
+      role,
+      canEdit: role === ShareLinkRole.EDITOR,
+      token: link.token,
+    };
+  }
+
+  /** @deprecated Use resolveShareLinkAccess */
   async resolveShareLink(token: string): Promise<ProjectEntity> {
+    const access = await this.resolveShareLinkAccess(token);
+    return access.project;
+  }
+
+  async autosaveSharedProject(token: string, content: unknown): Promise<ProjectEntity> {
+    const link = await this.findActiveShareLink(token);
+    if ((link.role ?? ShareLinkRole.VIEWER) !== ShareLinkRole.EDITOR) {
+      throw new ForbiddenException("This share link is view-only");
+    }
+
+    const updated = await this.projectModel
+      .findByIdAndUpdate(link.projectId, { $set: { content } }, { new: true })
+      .exec();
+    if (!updated) throw new NotFoundException("Project not found");
+    return updated;
+  }
+
+  private async findActiveShareLink(token: string): Promise<ShareLinkEntity> {
     const link = await this.shareLinkModel.findOne({ token, isRevoked: false }).exec();
     if (!link) throw new NotFoundException("Share link not found");
 
@@ -109,12 +197,16 @@ export class AssetsService {
       throw new NotFoundException("Share link expired");
     }
 
-    const project = await this.projectModel
-      .findOne({ _id: link.projectId, isDeleted: false })
-      .exec();
-    if (!project) throw new NotFoundException("Project not found");
+    return link;
+  }
 
-    return project;
+  private async findOwnedShareLink(token: string, userId: string): Promise<ShareLinkEntity> {
+    const link = await this.shareLinkModel.findOne({ token }).exec();
+    if (!link) throw new NotFoundException("Share link not found");
+    if (link.userId.toString() !== userId) {
+      throw new ForbiddenException("Access denied");
+    }
+    return link;
   }
 
   async exportPng(projectId: string, userId: string): Promise<ExportAssetResponse> {

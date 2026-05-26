@@ -48,13 +48,27 @@ export const PROJECT_QUERY = gql`
 export const RESOLVE_SHARE_LINK_QUERY = gql`
   query ResolveShareLink($token: String!) {
     resolveShareLink(token: $token) {
+      token
+      role
+      canEdit
+      project {
+        id
+        userId
+        title
+        width
+        height
+        content
+        createdAt
+        updatedAt
+      }
+    }
+  }
+`;
+
+export const AUTOSAVE_SHARED_PROJECT_MUTATION = gql`
+  mutation AutosaveSharedProject($token: String!, $content: JSON!) {
+    autosaveSharedProject(token: $token, content: $content) {
       id
-      userId
-      title
-      width
-      height
-      content
-      createdAt
       updatedAt
     }
   }
@@ -122,11 +136,39 @@ export const EXPORT_PNG_MUTATION = gql`
 `;
 
 export const CREATE_SHARE_LINK_MUTATION = gql`
-  mutation CreateShareLink($projectId: ID!, $expiresInHours: Float) {
-    createShareLink(projectId: $projectId, expiresInHours: $expiresInHours) {
+  mutation CreateShareLink($projectId: ID!, $expiresInHours: Float, $role: ShareLinkRole) {
+    createShareLink(projectId: $projectId, expiresInHours: $expiresInHours, role: $role) {
       url
       token
+      role
       expiresAt
     }
+  }
+`;
+
+export const PROJECT_SHARE_LINKS_QUERY = gql`
+  query ProjectShareLinks($projectId: ID!) {
+    projectShareLinks(projectId: $projectId) {
+      token
+      role
+      isRevoked
+      expiresAt
+      createdAt
+    }
+  }
+`;
+
+export const UPDATE_SHARE_LINK_ROLE_MUTATION = gql`
+  mutation UpdateShareLinkRole($token: String!, $role: ShareLinkRole!) {
+    updateShareLinkRole(token: $token, role: $role) {
+      token
+      role
+    }
+  }
+`;
+
+export const REVOKE_SHARE_LINK_MUTATION = gql`
+  mutation RevokeShareLink($token: String!) {
+    revokeShareLink(token: $token)
   }
 `;

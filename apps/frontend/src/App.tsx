@@ -31,6 +31,7 @@ export default function App() {
         <Route path="/auth/magic" element={<MagicLinkRedirect />} />
         <Route path="/oauth/callback" element={<OAuthCallbackPage />} />
         <Route path="/share/:token" element={<SharePage />} />
+        <Route path="/editor/share/:shareToken" element={<CanvasEnginePage />} />
         <Route
           path="/profile"
           element={

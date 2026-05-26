@@ -1,13 +1,18 @@
 import { ArrowRight, Circle, Eraser, Image as ImageIcon, MousePointer2, Pencil, Square, Triangle, Type } from "lucide-react";
 import { useMutation, useQuery } from "@apollo/client/react";
 import { useCallback, useEffect, useMemo, useRef, useState, type ClipboardEvent as ReactClipboardEvent, type DragEvent } from "react";
-import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 
 import { CanvasContextMenu, type ContextMenuItem } from "@/components/editor/CanvasContextMenu";
 import { CanvasEditorLayout, EditorWorkspaceProvider } from "@/components/editor";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { PromptDialog } from "@/components/ui/PromptDialog";
-import { AUTOSAVE_PROJECT_MUTATION, PROJECT_QUERY } from "../graphql/projects.graphql";
+import {
+  AUTOSAVE_PROJECT_MUTATION,
+  AUTOSAVE_SHARED_PROJECT_MUTATION,
+  PROJECT_QUERY,
+  RESOLVE_SHARE_LINK_QUERY,
+} from "../graphql/projects.graphql";
 import { sceneStateFromProjectContent } from "@/shared/lib/editor/scene-from-project-content";
 import { formatToolHotkey, getToolFromHotkey } from "@/shared/lib/editor/editor-hotkeys";
 import {
@@ -186,9 +191,12 @@ export function CanvasEnginePage() {
   const location = useLocation();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  const { shareToken: shareTokenParam } = useParams<{ shareToken?: string }>();
+  const shareToken = shareTokenParam ?? null;
+  const isShareEditMode = Boolean(shareToken);
   const standaloneMode = location.pathname === "/canvas-engine";
-  const isEditorRoute = location.pathname === "/editor";
-  const projectId = searchParams.get("projectId");
+  const isEditorRoute = location.pathname === "/editor" || isShareEditMode;
+  const projectId = isShareEditMode ? null : searchParams.get("projectId");
 
   const {
     data: projectData,
@@ -196,10 +204,32 @@ export function CanvasEnginePage() {
     error: projectQueryError,
   } = useQuery(PROJECT_QUERY, {
     variables: { id: projectId ?? "" },
-    skip: standaloneMode || !projectId,
+    skip: standaloneMode || isShareEditMode || !projectId,
   });
 
+  const {
+    data: shareData,
+    loading: shareLoading,
+    error: shareQueryError,
+  } = useQuery(RESOLVE_SHARE_LINK_QUERY, {
+    variables: { token: shareToken ?? "" },
+    skip: !shareToken,
+    fetchPolicy: "network-only",
+  });
+
+  const shareAccess = (
+    shareData as
+      | {
+          resolveShareLink?: {
+            canEdit: boolean;
+            project: { title?: string; createdAt?: string; content?: unknown };
+          };
+        }
+      | undefined
+  )?.resolveShareLink;
+
   const [autosaveProject] = useMutation(AUTOSAVE_PROJECT_MUTATION);
+  const [autosaveSharedProject] = useMutation(AUTOSAVE_SHARED_PROJECT_MUTATION);
   const [autosaveLabel, setAutosaveLabel] = useState<string>("");
   const [editorGridEnabled, setEditorGridEnabled] = useState(false);
   const [eraserSize, setEraserSize] = useState(24);
@@ -265,18 +295,32 @@ export function CanvasEnginePage() {
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
 
   const saveNow = useCallback(async () => {
-    if (!projectId || standaloneMode) return;
+    if (standaloneMode) return;
     const json = engine.exportSceneJson();
-    await autosaveProject({
-      variables: { id: projectId, content: JSON.parse(json) as Record<string, unknown> },
-    });
+    const content = JSON.parse(json) as Record<string, unknown>;
+
+    if (isShareEditMode && shareToken) {
+      await autosaveSharedProject({ variables: { token: shareToken, content } });
+    } else {
+      if (!projectId) return;
+      await autosaveProject({ variables: { id: projectId, content } });
+    }
+
     lastSentJsonRef.current = json;
     setHasUnsavedChanges(false);
     setAutosaveLabel("Saved");
     window.setTimeout(() => {
       setAutosaveLabel((s) => (s === "Saved" ? "" : s));
     }, 1500);
-  }, [projectId, standaloneMode, engine, autosaveProject]);
+  }, [
+    projectId,
+    standaloneMode,
+    isShareEditMode,
+    shareToken,
+    engine,
+    autosaveProject,
+    autosaveSharedProject,
+  ]);
 
   const applyProjectContent = useCallback(
     (content: unknown) => {
@@ -318,8 +362,12 @@ export function CanvasEnginePage() {
   const projectMeta = (
     projectData as { project?: { title?: string; createdAt?: string } } | null | undefined
   )?.project;
-  const projectTitle = projectMeta?.title ?? null;
-  const projectCreatedAt = projectMeta?.createdAt ?? null;
+  const projectTitle = isShareEditMode
+    ? (shareAccess?.project.title ?? "Shared project")
+    : (projectMeta?.title ?? null);
+  const projectCreatedAt = isShareEditMode
+    ? (shareAccess?.project.createdAt ?? null)
+    : (projectMeta?.createdAt ?? null);
 
   const exportProject = useCallback(
     async (format: ProjectExportFormat) => {
@@ -447,13 +495,13 @@ export function CanvasEnginePage() {
   }, [isEditorRoute]);
 
   useEffect(() => {
-    if (standaloneMode || !isEditorRoute) {
+    if (standaloneMode || !isEditorRoute || isShareEditMode) {
       return;
     }
     if (!projectId) {
       navigate("/projects?new=1", { replace: true });
     }
-  }, [standaloneMode, isEditorRoute, projectId, navigate]);
+  }, [standaloneMode, isEditorRoute, isShareEditMode, projectId, navigate]);
 
   useEffect(() => {
     if (standaloneMode) {
@@ -462,6 +510,30 @@ export function CanvasEnginePage() {
       engine.setSelection(["node-rect"]);
       setAutosaveLabel("");
       setHasUnsavedChanges(false);
+      return;
+    }
+
+    if (isShareEditMode) {
+      if (shareLoading) {
+        return;
+      }
+      if (shareQueryError || !shareAccess?.canEdit) {
+        hydratedEditorProjectIdRef.current = null;
+        engine.replaceScene(createEmptySerializableSceneState(), { recordHistory: false });
+        engine.setSelection([]);
+        return;
+      }
+      const hydrateKey = `share:${shareToken}`;
+      if (hydratedEditorProjectIdRef.current === hydrateKey) {
+        return;
+      }
+      hydratedEditorProjectIdRef.current = hydrateKey;
+      const scene = sceneStateFromProjectContent(shareAccess.project.content);
+      engine.replaceScene(scene, { recordHistory: false });
+      engine.setSelection([]);
+      lastSentJsonRef.current = engine.exportSceneJson();
+      setHasUnsavedChanges(false);
+      setAutosaveLabel("");
       return;
     }
 
@@ -495,15 +567,30 @@ export function CanvasEnginePage() {
     lastSentJsonRef.current = engine.exportSceneJson();
     setHasUnsavedChanges(false);
     setAutosaveLabel("");
-  }, [standaloneMode, projectId, projectLoading, projectQueryError, projectData, engine]);
+  }, [
+    standaloneMode,
+    isShareEditMode,
+    shareToken,
+    shareLoading,
+    shareQueryError,
+    shareAccess,
+    projectId,
+    projectLoading,
+    projectQueryError,
+    projectData,
+    engine,
+  ]);
 
   useEffect(() => {
-    if (standaloneMode || !projectId || projectLoading || projectQueryError) {
+    if (standaloneMode) {
       return;
     }
 
-    const proj = (projectData as { project?: { content?: unknown } } | null | undefined)?.project;
-    if (!proj) {
+    const canAutosave =
+      (isShareEditMode && shareToken && shareAccess?.canEdit && !shareLoading && !shareQueryError) ||
+      (projectId && !projectLoading && !projectQueryError);
+
+    if (!canAutosave) {
       return;
     }
 
@@ -525,12 +612,12 @@ export function CanvasEnginePage() {
         return;
       }
       setAutosaveLabel("Saving…");
-      void autosaveProject({
-        variables: {
-          id: projectId,
-          content,
-        },
-      })
+
+      const savePromise = isShareEditMode && shareToken
+        ? autosaveSharedProject({ variables: { token: shareToken, content } })
+        : autosaveProject({ variables: { id: projectId!, content } });
+
+      void savePromise
         .then(() => {
           lastSentJsonRef.current = json;
           setHasUnsavedChanges(false);
@@ -553,12 +640,26 @@ export function CanvasEnginePage() {
 
     return () => {
       unsub();
-        if (autosaveTimerRef.current) {
-          window.clearTimeout(autosaveTimerRef.current);
-          autosaveTimerRef.current = null;
-        }
+      if (autosaveTimerRef.current) {
+        window.clearTimeout(autosaveTimerRef.current);
+        autosaveTimerRef.current = null;
+      }
     };
-  }, [standaloneMode, projectId, projectLoading, projectQueryError, projectData, engine, autosaveProject]);
+  }, [
+    standaloneMode,
+    isShareEditMode,
+    shareToken,
+    shareAccess,
+    shareLoading,
+    shareQueryError,
+    projectId,
+    projectLoading,
+    projectQueryError,
+    projectData,
+    engine,
+    autosaveProject,
+    autosaveSharedProject,
+  ]);
 
   useEffect(() => {
     if (standaloneMode) {
@@ -1939,6 +2040,27 @@ export function CanvasEnginePage() {
   const canvasSurface = (
     <div className="relative h-full w-full" onContextMenu={handleCanvasContextMenu}>
       <div className="absolute inset-0 bg-[radial-gradient(#cbd5e1_2px,transparent_2px)] bg-size-[16px_16px]" />
+
+      {!standaloneMode && isShareEditMode && shareLoading ? (
+        <div className="absolute inset-0 z-30 flex items-center justify-center bg-slate-950/45 text-sm font-medium text-slate-100 backdrop-blur-[2px]">
+          Loading shared project…
+        </div>
+      ) : null}
+
+      {!standaloneMode && isShareEditMode && shareQueryError && !shareLoading ? (
+        <div className="pointer-events-auto absolute left-1/2 top-16 z-30 w-[min(92vw,28rem)] -translate-x-1/2 rounded-xl border border-rose-400/60 bg-rose-950/95 px-4 py-3 text-sm text-rose-50 shadow-lg">
+          <span>Share link is invalid, expired, or view-only.</span>
+          <Link className="ml-2 font-semibold text-emerald-300 underline underline-offset-2 hover:text-emerald-200" to="/">
+            Home
+          </Link>
+        </div>
+      ) : null}
+
+      {!standaloneMode && isShareEditMode && shareAccess?.canEdit && !shareLoading ? (
+        <div className="pointer-events-none absolute left-1/2 top-4 z-20 -translate-x-1/2 rounded-full bg-emerald-600/90 px-4 py-1.5 text-xs font-semibold text-white shadow">
+          Collaborative editing · changes save automatically
+        </div>
+      ) : null}
 
       {!standaloneMode && projectId && projectLoading ? (
         <div className="absolute inset-0 z-30 flex items-center justify-center bg-slate-950/45 text-sm font-medium text-slate-100 backdrop-blur-[2px]">

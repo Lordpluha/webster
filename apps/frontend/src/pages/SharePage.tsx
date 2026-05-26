@@ -1,5 +1,5 @@
 import { useQuery } from "@apollo/client/react";
-import { Eye, Link2 } from "lucide-react";
+import { Eye, Link2, Pencil } from "lucide-react";
 import { Link, Navigate, useParams } from "react-router-dom";
 
 import { ShareProjectViewer } from "@/components/share/ShareProjectViewer";
@@ -18,6 +18,13 @@ type SharedProject = {
   updatedAt?: string;
 };
 
+type ShareAccess = {
+  token: string;
+  role: "VIEWER" | "EDITOR";
+  canEdit: boolean;
+  project: SharedProject;
+};
+
 export function SharePage() {
   const { token } = useParams<{ token: string }>();
   const authUser = useAuthStore((state) => state.user);
@@ -29,11 +36,17 @@ export function SharePage() {
     fetchPolicy: "network-only",
   });
 
-  const project = (data as { resolveShareLink?: SharedProject } | undefined)?.resolveShareLink;
+  const access = (data as { resolveShareLink?: ShareAccess } | undefined)?.resolveShareLink;
+  const project = access?.project;
   const isOwner = Boolean(authUser && project && authUser.id === project.userId);
+  const canEdit = Boolean(access?.canEdit);
 
   if (!token) {
     return <Navigate to="/" replace />;
+  }
+
+  if (!loading && access?.canEdit) {
+    return <Navigate to={`/editor/share/${token}`} replace />;
   }
 
   const handleCopyLink = async () => {
@@ -60,7 +73,7 @@ export function SharePage() {
     );
   }
 
-  if (error || !project) {
+  if (error || !project || !access) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-app-gradient px-6 text-white">
         <div className="w-full max-w-md rounded-2xl border border-white/10 bg-white/5 p-6 text-center backdrop-blur">
@@ -93,9 +106,16 @@ export function SharePage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-900 ring-1 ring-amber-200">
-            <Eye size={14} aria-hidden />
-            View only
+          <span
+            className={
+              "inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ring-1 " +
+              (canEdit
+                ? "bg-emerald-50 text-emerald-900 ring-emerald-200"
+                : "bg-amber-50 text-amber-900 ring-amber-200")
+            }
+          >
+            {canEdit ? <Pencil size={14} aria-hidden /> : <Eye size={14} aria-hidden />}
+            {canEdit ? "Can edit" : "View only"}
           </span>
           <button
             type="button"

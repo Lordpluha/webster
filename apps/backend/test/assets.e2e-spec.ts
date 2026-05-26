@@ -183,15 +183,20 @@ describe("Assets E2E", () => {
     const res = await gql(`
       query {
         resolveShareLink(token: "${shareToken}") {
-          id
-          title
+          role
+          canEdit
+          project {
+            id
+            title
+          }
         }
       }
     `);
 
     expect(res.status).toBe(200);
     expect(res.body.errors).toBeUndefined();
-    expect(res.body.data.resolveShareLink.id).toBe(projectId);
+    expect(res.body.data.resolveShareLink.project.id).toBe(projectId);
+    expect(res.body.data.resolveShareLink.role).toBe("VIEWER");
   });
 
   it("should export pdf for owner", async () => {
