@@ -13,7 +13,7 @@ import { randomUUID } from "node:crypto";
 import { generateSecret, generateURI, verifySync } from "otplib";
 import * as QRCode from "qrcode";
 
-import { hash, verify } from "../../infra/common/utils/hashing";
+import { hash, sha256, verify } from "../../infra/common/utils/hashing";
 import { MailService } from "../../infra/mail/mail.service";
 import { OAuthService } from "../../infra/oauth/oauth.service";
 import type { OAuthProvider } from "../users/entities/user.entity";
@@ -21,7 +21,7 @@ import { UsersService } from "../users/users.service";
 import type { MessageResponse, TwoFactorSetupResponse } from "./dto/auth.response";
 import type { ChangePasswordDto, ResetPasswordDto } from "./dto/password.dto";
 import type { RegisterDto } from "./dto/register.dto";
-import { RefreshTokenEntity } from "./entities/refresh-token.entity";
+import { SessionEntity } from "./entities/session.entity";
 
 export interface TokenPair {
   accessToken: string;
@@ -38,7 +38,7 @@ export class AuthService {
     readonly configService: ConfigService,
     private readonly mailService: MailService,
     private readonly oauthService: OAuthService,
-    @InjectModel(RefreshTokenEntity.name) private refreshTokenModel: Model<RefreshTokenEntity>,
+    @InjectModel(SessionEntity.name) private sessionModel: Model<SessionEntity>,
   ) {}
 
   get refreshDays() {
@@ -111,38 +111,44 @@ export class AuthService {
     return this.generateTokens(user.id);
   }
 
-  // ─── Refresh Token ──────────────────────────────────
+  // ─── Session validation ─────────────────────────────
 
-  async refreshToken(token: string): Promise<TokenPair> {
-    // Find a matching non-revoked token by iterating hashes
-    const allTokens = await this.refreshTokenModel
-      .find({ isRevoked: false, expiresAt: { $gt: new Date() } })
+  async validateSession(accessToken: string) {
+    const accessTokenHash = sha256(accessToken);
+    const session = await this.sessionModel
+      .findOne({ accessTokenHash, isRevoked: false, accessExpiresAt: { $gt: new Date() } })
       .exec();
 
-    let matchedToken: RefreshTokenEntity | null = null;
-    for (const t of allTokens) {
-      const isMatch = await verify(t.tokenHash, token);
-      if (isMatch) {
-        matchedToken = t;
-        break;
-      }
+    if (!session) {
+      throw new UnauthorizedException("Invalid or expired token");
     }
 
-    if (!matchedToken) {
+    return this.usersService.findById(session.userId.toString());
+  }
+
+  // ─── Refresh Token ──────────────────────────────────
+
+  async refreshToken(rawToken: string): Promise<TokenPair> {
+    const refreshTokenHash = sha256(rawToken);
+
+    const session = await this.sessionModel
+      .findOne({ refreshTokenHash, isRevoked: false, refreshExpiresAt: { $gt: new Date() } })
+      .exec();
+
+    if (!session) {
       throw new UnauthorizedException("Invalid or expired refresh token");
     }
 
-    // Revoke used token (rotation)
-    matchedToken.isRevoked = true;
-    await matchedToken.save();
+    session.isRevoked = true;
+    await session.save();
 
-    return this.generateTokens(matchedToken.userId.toString());
+    return this.generateTokens(session.userId.toString());
   }
 
   // ─── Logout ─────────────────────────────────────────
 
   async logout(userId: string): Promise<MessageResponse> {
-    await this.refreshTokenModel.updateMany(
+    await this.sessionModel.updateMany(
       { userId, isRevoked: false },
       { isRevoked: true },
     );
@@ -200,7 +206,7 @@ export class AuthService {
       await this.usersService.setPassword(payload.sub, passwordHash);
 
       // Revoke all refresh tokens for security
-      await this.refreshTokenModel.updateMany(
+      await this.sessionModel.updateMany(
         { userId: payload.sub, isRevoked: false },
         { isRevoked: true },
       );
@@ -359,31 +365,44 @@ export class AuthService {
   // ─── Private helpers ────────────────────────────────
 
   private async generateTokens(userId: string): Promise<TokenPair> {
+    const accessExpiresIn = this.configService.get<string>("JWT_ACCESS_EXPIRES_IN") ?? "15m";
+    const refreshExpiresIn = this.configService.get<string>("JWT_REFRESH_EXPIRES_IN") ?? "30d";
+    const refreshDays = this.configService.get<number>("JWT_REFRESH_DAYS", 7);
+
     const accessToken = this.jwtService.sign(
-      { sub: userId },
-      {
-        secret: this.getJwtSecret(),
-        expiresIn: this.configService.get("JWT_ACCESS_EXPIRES_IN") || "15m",
-      } as any,
+      { sub: userId, type: "access", jti: randomUUID() },
+      { secret: this.getJwtSecret(), expiresIn: accessExpiresIn } as any,
     );
 
-    const refreshTokenValue = randomUUID();
-    const refreshTokenHash = await hash(refreshTokenValue);
+    const refreshToken = this.jwtService.sign(
+      { sub: userId, type: "refresh", jti: randomUUID() },
+      { secret: this.configService.getOrThrow<string>("JWT_REFRESH_SECRET"), expiresIn: refreshExpiresIn } as any,
+    );
 
-    const expiresIn = this.configService.get<number>("JWT_REFRESH_DAYS", 7);
-    const expiresAt = new Date();
-    expiresAt.setDate(expiresAt.getDate() + expiresIn);
+    const accessTokenHash = sha256(accessToken);
+    const refreshTokenHash = sha256(refreshToken);
 
-    await this.refreshTokenModel.create({
+    const accessExpiresAt = new Date(Date.now() + this.parseExpiry(accessExpiresIn) * 1000);
+    const refreshExpiresAt = new Date(Date.now() + refreshDays * 24 * 60 * 60 * 1000);
+
+    await this.sessionModel.create({
       userId,
-      tokenHash: refreshTokenHash,
-      expiresAt,
+      accessTokenHash,
+      refreshTokenHash,
+      accessExpiresAt,
+      refreshExpiresAt,
     });
 
-    return {
-      accessToken,
-      refreshToken: refreshTokenValue,
-    };
+    return { accessToken, refreshToken };
+  }
+
+  private parseExpiry(value: string): number {
+    const match = value.match(/^(\d+)(s|m|h|d)$/);
+    if (!match) return 900;
+    const num = Number(match[1]);
+    const unit = match[2];
+    const toSeconds: Record<string, number> = { s: 1, m: 60, h: 3600, d: 86400 };
+    return num * (toSeconds[unit] ?? 60);
   }
 
   private async sendVerificationEmail(

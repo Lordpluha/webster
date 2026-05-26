@@ -1,33 +1,46 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
-import { ApolloClient, HttpLink, InMemoryCache, from } from "@apollo/client";
+import { ApolloClient, HttpLink, InMemoryCache } from "@apollo/client";
 import { ApolloProvider } from "@apollo/client/react";
-import { onError } from "@apollo/client/link/error";
+import { ApolloLink } from "@apollo/client/link";
+import { ErrorLink } from "@apollo/client/link/error";
+import { CombinedGraphQLErrors } from "@apollo/client/errors";
 import { Observable } from "@apollo/client/utilities";
 import { BrowserRouter } from "react-router-dom";
 
 import App from "./App";
 import "./styles.css";
 import { useToastStore } from "./shared/stores/toast.store";
+import { useAuthStore } from "./shared/stores/auth.store";
 
 const graphqlUrl = import.meta.env.VITE_GRAPHQL_URL || "http://localhost:4000/graphql";
 
-async function refreshToken() {
-  try {
-    const response = await fetch(graphqlUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      credentials: "include",
-      body: JSON.stringify({
-        query: "mutation RefreshToken { refreshToken { message } }",
-      }),
-    });
+let pendingRefresh: Promise<boolean> | null = null;
 
-    const payload = await response.json();
-    return response.ok && !payload.errors?.length;
-  } catch {
-    return false;
-  }
+async function refreshToken() {
+  if (pendingRefresh) return pendingRefresh;
+
+  pendingRefresh = (async () => {
+    try {
+      const response = await fetch(graphqlUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          query: "mutation RefreshToken { refreshToken { message } }",
+        }),
+      });
+
+      const payload = await response.json();
+      return response.ok && !payload.errors?.length;
+    } catch {
+      return false;
+    }
+  })().finally(() => {
+    pendingRefresh = null;
+  });
+
+  return pendingRefresh;
 }
 
 let lastErrorToastAt = 0;
@@ -46,31 +59,34 @@ function pushErrorToast(title: string, message?: string) {
   });
 }
 
-const errorLink = onError(({ graphQLErrors, networkError, operation, forward }) => {
-  const hasAuthError =
-    graphQLErrors?.some((err) =>
-      err.extensions?.code ? err.extensions.code === "UNAUTHENTICATED" : /unauth/i.test(err.message),
-    ) ?? false;
+const errorLink = new ErrorLink(({ error, operation, forward }) => {
+  const isGraphQLError = CombinedGraphQLErrors.is(error);
 
-  if (networkError) {
-    pushErrorToast("Server error", networkError.message);
+  if (!isGraphQLError) {
+    pushErrorToast("Server error", error.message);
     return;
   }
 
+  const hasAuthError = error.errors.some((err) => {
+    if (err.extensions?.code === "UNAUTHENTICATED") return true;
+    const orig = err.extensions?.originalError as Record<string, unknown> | undefined;
+    if (orig?.statusCode === 401) return true;
+    return false;
+  });
+
   if (!hasAuthError) {
-    if (graphQLErrors && graphQLErrors.length > 0) {
-      pushErrorToast("Request failed", graphQLErrors[0]?.message);
-    }
+    pushErrorToast("Request failed", error.errors[0]?.message);
     return;
   }
 
   return new Observable((observer) => {
-    let subscription: { unsubscribe: () => void } | null = null;
+    let subscription: { unsubscribe(): void } | null = null;
 
     refreshToken()
       .then((didRefresh) => {
         if (!didRefresh) {
-          observer.error(new Error("Unable to refresh session"));
+          useAuthStore.getState().setUser(null);
+          observer.complete();
           return;
         }
 
@@ -80,16 +96,17 @@ const errorLink = onError(({ graphQLErrors, networkError, operation, forward }) 
           complete: () => observer.complete(),
         });
       })
-      .catch((err) => observer.error(err));
+      .catch(() => {
+        useAuthStore.getState().setUser(null);
+        observer.complete();
+      });
 
-    return () => {
-      subscription?.unsubscribe();
-    };
+    return () => subscription?.unsubscribe();
   });
 });
 
 const apolloClient = new ApolloClient({
-  link: from([
+  link: ApolloLink.from([
     errorLink,
     new HttpLink({
       uri: graphqlUrl,

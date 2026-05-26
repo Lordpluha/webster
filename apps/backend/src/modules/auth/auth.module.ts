@@ -6,14 +6,14 @@ import { MongooseModule } from "@nestjs/mongoose";
 import { UsersModule } from "../users/users.module";
 import { AuthResolver } from "./auth.resolver";
 import { AuthService } from "./auth.service";
-import { RefreshTokenEntity, RefreshTokenSchema } from "./entities/refresh-token.entity";
+import { SessionEntity, SessionSchema } from "./entities/session.entity";
 import { JwtAuthGuard } from "./guards/jwt-auth.guard";
 
 @Module({
   imports: [
     forwardRef(() => UsersModule),
     MongooseModule.forFeature([
-      { name: RefreshTokenEntity.name, schema: RefreshTokenSchema },
+      { name: SessionEntity.name, schema: SessionSchema },
     ]),
     JwtModule.registerAsync({
       imports: [ConfigModule],
@@ -27,6 +27,6 @@ import { JwtAuthGuard } from "./guards/jwt-auth.guard";
     }),
   ],
   providers: [AuthService, AuthResolver, JwtAuthGuard],
-  exports: [JwtAuthGuard, JwtModule],
+  exports: [JwtAuthGuard, JwtModule, AuthService],
 })
 export class AuthModule {}
