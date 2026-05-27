@@ -205,6 +205,7 @@ export function CanvasEnginePage() {
   } = useQuery(PROJECT_QUERY, {
     variables: { id: projectId ?? "" },
     skip: standaloneMode || isShareEditMode || !projectId,
+    fetchPolicy: "network-only",
   });
 
   const {
@@ -228,7 +229,44 @@ export function CanvasEnginePage() {
       | undefined
   )?.resolveShareLink;
 
-  const [autosaveProject] = useMutation(AUTOSAVE_PROJECT_MUTATION);
+  const [autosaveProject] = useMutation(AUTOSAVE_PROJECT_MUTATION, {
+    update(cache, { data }, { variables }) {
+      const vars = variables as { id?: string; content?: unknown } | undefined;
+      const result = (data as { autosaveProject?: { id: string; updatedAt: string } } | undefined)
+        ?.autosaveProject;
+      if (!vars?.id || !result || vars.content === undefined) {
+        return;
+      }
+
+      const existing = cache.readQuery<{
+        project?: {
+          id: string;
+          title?: string;
+          content?: unknown;
+          createdAt?: string;
+          updatedAt?: string;
+        };
+      }>({
+        query: PROJECT_QUERY,
+        variables: { id: vars.id },
+      });
+      if (!existing?.project) {
+        return;
+      }
+
+      cache.writeQuery({
+        query: PROJECT_QUERY,
+        variables: { id: vars.id },
+        data: {
+          project: {
+            ...existing.project,
+            content: vars.content,
+            updatedAt: result.updatedAt,
+          },
+        },
+      });
+    },
+  });
   const [autosaveSharedProject] = useMutation(AUTOSAVE_SHARED_PROJECT_MUTATION);
   const [autosaveLabel, setAutosaveLabel] = useState<string>("");
   const [editorGridEnabled, setEditorGridEnabled] = useState(false);
@@ -294,33 +332,69 @@ export function CanvasEnginePage() {
   } | null>(null);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
 
-  const saveNow = useCallback(async () => {
-    if (standaloneMode) return;
-    const json = engine.exportSceneJson();
-    const content = JSON.parse(json) as Record<string, unknown>;
-
-    if (isShareEditMode && shareToken) {
-      await autosaveSharedProject({ variables: { token: shareToken, content } });
-    } else {
-      if (!projectId) return;
-      await autosaveProject({ variables: { id: projectId, content } });
+  const flushAutosaveNow = useCallback(async (): Promise<boolean> => {
+    if (standaloneMode) {
+      return true;
     }
 
-    lastSentJsonRef.current = json;
-    setHasUnsavedChanges(false);
-    setAutosaveLabel("Saved");
-    window.setTimeout(() => {
-      setAutosaveLabel((s) => (s === "Saved" ? "" : s));
-    }, 1500);
+    const json = engine.exportSceneJson();
+    if (json === lastSentJsonRef.current) {
+      return true;
+    }
+
+    const content = JSON.parse(json) as {
+      nodes?: Record<string, { type?: string; data?: { src?: string } }>;
+    };
+    const hasTemporaryImage = Object.values(content.nodes ?? {}).some(
+      (node) =>
+        node.type === "image" &&
+        (node.data?.src?.startsWith("data:") || node.data?.src?.startsWith("blob:")),
+    );
+    if (pendingImageUploadsRef.current > 0 || hasTemporaryImage) {
+      return false;
+    }
+
+    try {
+      if (isShareEditMode && shareToken) {
+        await autosaveSharedProject({ variables: { token: shareToken, content } });
+      } else if (projectId) {
+        await autosaveProject({ variables: { id: projectId, content } });
+      } else {
+        return true;
+      }
+      lastSentJsonRef.current = json;
+      setHasUnsavedChanges(false);
+      return true;
+    } catch {
+      setAutosaveLabel("Save failed");
+      return false;
+    }
   }, [
-    projectId,
     standaloneMode,
     isShareEditMode,
     shareToken,
+    projectId,
     engine,
     autosaveProject,
     autosaveSharedProject,
   ]);
+
+  const saveNow = useCallback(async () => {
+    if (standaloneMode) return;
+    if (autosaveTimerRef.current) {
+      window.clearTimeout(autosaveTimerRef.current);
+      autosaveTimerRef.current = null;
+    }
+    setAutosaveLabel("Saving…");
+    const ok = await flushAutosaveNow();
+    if (!ok) {
+      return;
+    }
+    setAutosaveLabel("Saved");
+    window.setTimeout(() => {
+      setAutosaveLabel((s) => (s === "Saved" ? "" : s));
+    }, 1500);
+  }, [standaloneMode, flushAutosaveNow]);
 
   const applyProjectContent = useCallback(
     (content: unknown) => {
@@ -594,49 +668,41 @@ export function CanvasEnginePage() {
       return;
     }
 
-    const flushAutosave = () => {
-      const json = engine.exportSceneJson();
-      if (json === lastSentJsonRef.current) {
-        return;
-      }
-      const content = JSON.parse(json) as {
-        nodes?: Record<string, { type?: string; data?: { src?: string } }>;
-      };
-      const hasTemporaryImage = Object.values(content.nodes ?? {}).some(
-        (node) =>
-          node.type === "image" &&
-          (node.data?.src?.startsWith("data:") || node.data?.src?.startsWith("blob:")),
-      );
-      if (pendingImageUploadsRef.current > 0 || hasTemporaryImage) {
-        setAutosaveLabel("Uploading image…");
-        return;
-      }
-      setAutosaveLabel("Saving…");
-
-      const savePromise = isShareEditMode && shareToken
-        ? autosaveSharedProject({ variables: { token: shareToken, content } })
-        : autosaveProject({ variables: { id: projectId!, content } });
-
-      void savePromise
-        .then(() => {
-          lastSentJsonRef.current = json;
-          setHasUnsavedChanges(false);
-          setAutosaveLabel("Saved");
-          window.setTimeout(() => {
-            setAutosaveLabel((s) => (s === "Saved" ? "" : s));
-          }, 2000);
-        })
-        .catch(() => {
-          setAutosaveLabel("Save failed");
-        });
-    };
-
-    const unsub = engine.events.on("scene:changed", () => {
+    const scheduleAutosave = () => {
       if (autosaveTimerRef.current) {
         window.clearTimeout(autosaveTimerRef.current);
       }
-      autosaveTimerRef.current = window.setTimeout(flushAutosave, 1200);
-    });
+      autosaveTimerRef.current = window.setTimeout(() => {
+        autosaveTimerRef.current = null;
+        const json = engine.exportSceneJson();
+        if (json === lastSentJsonRef.current) {
+          return;
+        }
+        const content = JSON.parse(json) as {
+          nodes?: Record<string, { type?: string; data?: { src?: string } }>;
+        };
+        const hasTemporaryImage = Object.values(content.nodes ?? {}).some(
+          (node) =>
+            node.type === "image" &&
+            (node.data?.src?.startsWith("data:") || node.data?.src?.startsWith("blob:")),
+        );
+        if (pendingImageUploadsRef.current > 0 || hasTemporaryImage) {
+          setAutosaveLabel("Uploading image…");
+          return;
+        }
+        setAutosaveLabel("Saving…");
+        void flushAutosaveNow().then((ok) => {
+          if (ok) {
+            setAutosaveLabel("Saved");
+            window.setTimeout(() => {
+              setAutosaveLabel((s) => (s === "Saved" ? "" : s));
+            }, 2000);
+          }
+        });
+      }, 1200);
+    };
+
+    const unsub = engine.events.on("scene:changed", scheduleAutosave);
 
     return () => {
       unsub();
@@ -644,6 +710,7 @@ export function CanvasEnginePage() {
         window.clearTimeout(autosaveTimerRef.current);
         autosaveTimerRef.current = null;
       }
+      void flushAutosaveNow();
     };
   }, [
     standaloneMode,
@@ -655,10 +722,8 @@ export function CanvasEnginePage() {
     projectId,
     projectLoading,
     projectQueryError,
-    projectData,
+    flushAutosaveNow,
     engine,
-    autosaveProject,
-    autosaveSharedProject,
   ]);
 
   useEffect(() => {
@@ -693,14 +758,21 @@ export function CanvasEnginePage() {
   }, [hasUnsavedChanges]);
 
   const confirmNavigation = useCallback(
-    (nextPath: string) => {
-      if (!hasUnsavedChanges) {
-        navigate(nextPath);
+    async (nextPath: string) => {
+      if (autosaveTimerRef.current) {
+        window.clearTimeout(autosaveTimerRef.current);
+        autosaveTimerRef.current = null;
+      }
+      await flushAutosaveNow();
+
+      if (hasUnsavedChanges) {
+        setPendingLeavePath(nextPath);
         return;
       }
-      setPendingLeavePath(nextPath);
+      hydratedEditorProjectIdRef.current = null;
+      navigate(nextPath);
     },
-    [hasUnsavedChanges, navigate],
+    [flushAutosaveNow, hasUnsavedChanges, navigate],
   );
 
   const applyTextFromPrompt = useCallback(
@@ -2082,7 +2154,7 @@ export function CanvasEnginePage() {
           <button
             type="button"
             className="pointer-events-auto font-medium text-emerald-700 underline-offset-2 hover:underline"
-            onClick={() => confirmNavigation("/projects")}
+            onClick={() => void confirmNavigation("/projects")}
           >
             All projects
           </button>
