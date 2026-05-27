@@ -641,14 +641,8 @@ export class CanvasRenderer {
         break;
       }
       case "path": {
-        const contours =
-          node.data?.contours && node.data.contours.length > 0
-            ? node.data.contours
-            : node.data?.points && node.data.points.length >= 2
-              ? [node.data.points]
-              : [];
-
-        for (const points of contours) {
+        const closedContours = node.data?.contours ?? [];
+        for (const points of closedContours) {
           if (points.length < 2) {
             continue;
           }
@@ -659,8 +653,27 @@ export class CanvasRenderer {
             ctx.lineTo(point.x, point.y);
           }
           ctx.closePath();
-          ctx.fill();
-          ctx.stroke();
+          if (node.style.fill) {
+            ctx.fill();
+          }
+          if (strokeWidth > 0) {
+            ctx.stroke();
+          }
+        }
+
+        const openStroke = node.data?.points;
+        if (openStroke && openStroke.length >= 2) {
+          ctx.lineCap = "round";
+          ctx.lineJoin = "round";
+          ctx.beginPath();
+          ctx.moveTo(openStroke[0].x, openStroke[0].y);
+          for (let index = 1; index < openStroke.length; index += 1) {
+            const point = openStroke[index];
+            ctx.lineTo(point.x, point.y);
+          }
+          if (strokeWidth > 0) {
+            ctx.stroke();
+          }
         }
         break;
       }

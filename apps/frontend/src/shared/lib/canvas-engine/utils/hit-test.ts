@@ -109,21 +109,22 @@ export function hitTestNodeAtWorldPoint(node: SceneNode, worldPoint: Point): boo
     }
     case "arrow":
     case "path": {
-      const contours =
-        node.data?.contours && node.data.contours.length > 0
-          ? node.data.contours
-          : node.data?.points && node.data.points.length >= 2
-            ? [node.data.points]
-            : null;
-
-      if (!contours) {
-        return isPointInRectLocal(localPoint, localBounds);
-      }
-
       const strokeWidth = node.style.strokeWidth ?? 2;
       const hitRadius = Math.max(4, strokeWidth * 1.5);
 
-      for (const points of contours) {
+      const strokeSegments: Point[][] = [];
+      if (node.data?.contours?.length) {
+        strokeSegments.push(...node.data.contours);
+      }
+      if (node.data?.points && node.data.points.length >= 2) {
+        strokeSegments.push(node.data.points);
+      }
+
+      if (strokeSegments.length === 0) {
+        return isPointInRectLocal(localPoint, localBounds);
+      }
+
+      for (const points of strokeSegments) {
         for (let i = 0; i < points.length - 1; i += 1) {
           const a = points[i];
           const b = points[i + 1];

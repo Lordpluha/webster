@@ -14,8 +14,9 @@ export interface SceneNodeData {
   fontSize?: number;
   fontFamily?: string;
   src?: string;
+  /** Freehand stroke from the pencil tool (open polyline, stroke only). */
   points?: Point[];
-  /** Closed outlines for path nodes (each contour drawn separately). */
+  /** Closed outlines (filled shapes); each contour is drawn closed. */
   contours?: Point[][];
   eraseMarks?: Array<{ x: number; y: number; radius: number }>;
   groupId?: string;
