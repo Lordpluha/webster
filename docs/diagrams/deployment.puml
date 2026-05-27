@@ -5,6 +5,7 @@ title Deployment Diagram — Webster
 
 node "Client Browser" as Browser {
   component "React SPA\n(Apollo, Canvas Engine)" as ReactApp
+  artifact "/avatars/*.svg" as Avatars <<static presets>>
 }
 
 node "VPS (DigitalOcean)" as VPS {
@@ -22,6 +23,7 @@ node "VPS (DigitalOcean)" as VPS {
     node "Backend :4000" as BE {
       component "NestJS + GraphQL" as Nest
       artifact "/uploads" as Uploads
+      artifact "/uploads/avatars" as AvatarUploads
     }
 
     node "MongoDB :27017" as Mongo {
@@ -32,7 +34,7 @@ node "VPS (DigitalOcean)" as VPS {
     BE --> Mongo : Mongoose
   }
 
-  Proxy --> FE : /
+  Proxy --> FE : /, /avatars
   Proxy --> BE : /graphql, /upload, /uploads
 }
 
@@ -42,8 +44,14 @@ cloud "External Services" as Ext {
 }
 
 Browser --> Nginx : HTTPS
-BE ..> SMTP
+BE ..> SMTP : transactional mail
 Browser ..> OAuth
 OAuth ..> BE
+
+note right of BE
+  Collaborative editing:
+  GraphQL only (no WebSocket).
+  Share token + autosaveSharedProject.
+end note
 
 @enduml

@@ -1,9 +1,10 @@
 @startuml sequence
 skinparam backgroundColor #FAFAFA
 
-title Sequence Diagram — Webster\nRegister → Login → Edit → Autosave
+title Sequence Diagram — Webster\nRegister → Edit → Autosave → Share
 
 actor User
+actor Guest
 participant "React Frontend" as FE
 participant "NestJS Backend" as BE
 participant "MongoDB" as DB
@@ -16,8 +17,6 @@ FE -> BE : mutation register
 BE -> DB : Create user (isEmailVerified: false)
 BE -> Mail : Send verification email
 Mail --> User : Email with link
-BE --> FE : Success message
-
 User -> FE : Open /verify-email?token=...
 FE -> BE : mutation verifyEmail
 BE -> DB : Set isEmailVerified = true
@@ -33,7 +32,7 @@ FE --> User : Redirect to /projects
 
 == Edit & Autosave ==
 
-User -> FE : Open editor
+User -> FE : Open editor (?projectId)
 FE -> BE : query project(id)
 BE -> DB : Find project
 DB --> BE : Project + content (JSON)
@@ -44,11 +43,10 @@ User -> FE : Edit canvas
 FE -> FE : Debounce 1.2s
 FE -> BE : mutation autosaveProject(id, content)
 BE -> DB : Update project.content
-DB --> BE : OK
 BE --> FE : { id, updatedAt }
 FE --> User : Show "Saved"
 
-== Image Upload (optional) ==
+== Image Upload ==
 
 User -> FE : Drop image on canvas
 FE -> FE : Show blob preview
@@ -56,6 +54,34 @@ FE -> BE : POST /upload
 BE -> DB : Save upload metadata
 BE --> FE : { url: /uploads/... }
 FE -> FE : Replace preview with server URL
-FE --> User : Image visible
+
+== Sharing ==
+
+User -> FE : Share → choose role\n(View only / Can edit)
+FE -> BE : mutation createShareLink\n(projectId, role)
+BE -> DB : Create share link (token, role)
+BE --> FE : { url, token, role }
+FE --> User : Copy link
+
+note over FE, BE
+  Owner can also change role
+  or revoke via updateShareLinkRole / revokeShareLink
+end note
+
+Guest -> FE : Open /share/:token
+FE -> BE : query resolveShareLink(token)
+BE -> DB : Validate token, load project
+BE --> FE : { project, role, canEdit }
+
+alt role = VIEWER
+  FE --> Guest : Read-only canvas\n(pan / zoom only)
+else role = EDITOR
+  FE -> FE : Redirect /editor/share/:token
+  Guest -> FE : Edit canvas
+  FE -> BE : mutation autosaveSharedProject\n(token, content)
+  BE -> DB : Update project.content
+  BE --> FE : { updatedAt }
+  FE --> Guest : Show "Saved"
+end
 
 @enduml

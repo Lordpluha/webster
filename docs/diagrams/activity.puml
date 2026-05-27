@@ -6,7 +6,7 @@ skinparam activity {
   ArrowColor DarkSlateGray
 }
 
-title Activity Diagram — Webster\n(Register → Edit → Save)
+title Activity Diagram — Webster\n(Register → Edit → Share)
 
 start
 
@@ -26,7 +26,26 @@ if (Authenticated?) then (no)
   endif
 endif
 
+if (Opened share link?) then (yes)
+  :resolveShareLink(token);
+  if (Link role?) then (VIEWER)
+    :View canvas (read-only)\n/share/:token;
+    stop
+  else (EDITOR)
+    :Open collaborative editor\n/editor/share/:token;
+    repeat
+      :Edit canvas;
+      :Autosave via token\n(autosaveSharedProject);
+    repeat while (Continue?) is (yes)
+    stop
+  endif
+endif
+
 :Open projects list;
+
+if (Optional: Profile) then (yes)
+  :Set avatar\n(preset or upload);
+endif
 
 if (New or existing project?) then (new)
   :Create project\n(from template or blank);
@@ -37,7 +56,7 @@ endif
 :Load project content;
 
 repeat
-  :Edit canvas\n(shapes, text, images, layers);
+  :Edit canvas\n(shapes, text, images, layers, groups);
 
   if (Added image?) then (yes)
     :Show instant preview;
@@ -51,7 +70,12 @@ repeat while (Continue editing?) is (yes)
 if (Next action?) then (Export)
   :Export (PNG / JPG / PDF / WEBP);
 elseif (Share)
-  :Create share link;
+  :Open Share dialog;
+  :Choose role:\nView only or Can edit;
+  :Create link & copy;
+  if (Manage existing links?) then (yes)
+    :Change role or revoke;
+  endif
 elseif (Version history)
   :Save or restore version;
 else (Done)
