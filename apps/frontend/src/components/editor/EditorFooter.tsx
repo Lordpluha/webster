@@ -178,6 +178,43 @@ export const EditorFooter: FC = () => {
     }
   };
 
+  const shareTargets = {
+    facebook: (url: string) => `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(url)}`,
+    pinterest: (url: string) =>
+      `https://pinterest.com/pin/create/button/?url=${encodeURIComponent(url)}&description=${encodeURIComponent("Webster project")}`,
+    x: (url: string) =>
+      `https://twitter.com/intent/tweet?url=${encodeURIComponent(url)}&text=${encodeURIComponent("Check this out")}`,
+  } as const;
+
+  const createViewerShareUrl = async (): Promise<string> => {
+    if (!pid) throw new Error("Missing project id");
+    const res = await createShareLink({
+      variables: { projectId: pid, expiresInHours: 72, role: "VIEWER" },
+    });
+    const payload = (res.data as { createShareLink?: { url?: string } } | undefined)?.createShareLink;
+    if (!payload?.url) {
+      throw new Error("No share URL returned");
+    }
+    return payload.url.startsWith("http") ? payload.url : `${window.location.origin}${payload.url}`;
+  };
+
+  const handleShareTo = async (target: keyof typeof shareTargets) => {
+    setBusy("share");
+    try {
+      const url = await createViewerShareUrl();
+      window.open(shareTargets[target](url), "_blank", "noopener,noreferrer");
+      setShareMenuOpen(false);
+    } catch (e) {
+      pushToast({
+        title: "Share failed",
+        message: e instanceof Error ? e.message : "Could not share",
+        tone: "error",
+      });
+    } finally {
+      setBusy(null);
+    }
+  };
+
   const handleSaveTemplate = async (title: string) => {
     setBusy("template");
     try {
@@ -311,6 +348,33 @@ export const EditorFooter: FC = () => {
               role="menuitem"
             >
               Copy link
+            </button>
+            <button
+              type="button"
+              disabled={busy === "share"}
+              className="w-full rounded-lg px-3 py-2 text-left text-sm font-semibold text-violet-100 hover:bg-white/10 disabled:opacity-50"
+              onClick={() => void handleShareTo("facebook")}
+              role="menuitem"
+            >
+              Share to Facebook
+            </button>
+            <button
+              type="button"
+              disabled={busy === "share"}
+              className="w-full rounded-lg px-3 py-2 text-left text-sm font-semibold text-violet-100 hover:bg-white/10 disabled:opacity-50"
+              onClick={() => void handleShareTo("pinterest")}
+              role="menuitem"
+            >
+              Share to Pinterest
+            </button>
+            <button
+              type="button"
+              disabled={busy === "share"}
+              className="w-full rounded-lg px-3 py-2 text-left text-sm font-semibold text-violet-100 hover:bg-white/10 disabled:opacity-50"
+              onClick={() => void handleShareTo("x")}
+              role="menuitem"
+            >
+              Share to X
             </button>
           </div>
         </div>
