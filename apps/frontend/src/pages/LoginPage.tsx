@@ -17,6 +17,7 @@ import {
   validateLoginFields,
 } from "@/shared/lib/validation/auth-fields";
 import { LOGIN_MUTATION, GET_CURRENT_USER } from "../graphql/auth.graphql";
+import { getOAuthAuthorizeUrl, type OAuthProvider } from "@/shared/lib/auth/oauth";
 
 interface FieldErrors {
   email?: string;
@@ -105,6 +106,23 @@ export function LoginPage() {
     }
   };
 
+  const startOAuth = (provider: OAuthProvider) => {
+    const url = getOAuthAuthorizeUrl(provider);
+    if (!url) {
+      setFieldErrors((prev) => ({
+        ...prev,
+        form:
+          provider === "Google"
+            ? "Google OAuth is not configured. Add VITE_GOOGLE_CLIENT_ID."
+            : provider === "Github"
+              ? "GitHub OAuth is not configured. Add VITE_GITHUB_CLIENT_ID."
+              : "Facebook OAuth is not configured. Add VITE_FACEBOOK_CLIENT_ID.",
+      }));
+      return;
+    }
+    window.location.assign(url);
+  };
+
   return (
     <MarketingShell minimalNav>
       <AuthCard
@@ -137,6 +155,36 @@ export function LoginPage() {
             {fieldErrors.form}
           </div>
         )}
+
+        <div className="space-y-2">
+          <button
+            type="button"
+            onClick={() => startOAuth("Google")}
+            className={`${authPrimaryButtonClass()} w-full`}
+          >
+            Continue with Google
+          </button>
+          <button
+            type="button"
+            onClick={() => startOAuth("Github")}
+            className={`${authPrimaryButtonClass()} w-full bg-slate-900 text-white hover:bg-slate-800`}
+          >
+            Continue with GitHub
+          </button>
+          <button
+            type="button"
+            onClick={() => startOAuth("Facebook")}
+            className={`${authPrimaryButtonClass()} w-full bg-blue-600 text-white hover:bg-blue-500`}
+          >
+            Continue with Facebook
+          </button>
+        </div>
+
+        <div className="my-6 flex items-center gap-3">
+          <div className="h-px flex-1 bg-slate-800" />
+          <div className="text-xs font-semibold uppercase tracking-wide text-slate-400">or</div>
+          <div className="h-px flex-1 bg-slate-800" />
+        </div>
 
         <form onSubmit={handleSubmit} className="space-y-4" noValidate>
           <div>
