@@ -1,6 +1,6 @@
 import { useMutation, useQuery } from "@apollo/client/react";
 import { useMemo, useState } from "react";
-import { Eye, Pencil, Trash2 } from "lucide-react";
+import { Eye, Pencil, Share2, Trash2 } from "lucide-react";
 
 import {
   CREATE_SHARE_LINK_MUTATION,
@@ -78,6 +78,7 @@ export function ShareLinkDialog({ open, projectId, onClose }: ShareLinkDialogPro
   const pushToast = useToastStore((s) => s.pushToast);
   const [newRole, setNewRole] = useState<ShareRole>("VIEWER");
   const [busy, setBusy] = useState(false);
+  const [shareMenuToken, setShareMenuToken] = useState<string | null>(null);
 
   const { data, refetch } = useQuery(PROJECT_SHARE_LINKS_QUERY, {
     variables: { projectId },
@@ -111,10 +112,16 @@ export function ShareLinkDialog({ open, projectId, onClose }: ShareLinkDialogPro
         `https://pinterest.com/pin/create/button/?url=${encodeURIComponent(url)}&description=${encodeURIComponent("Webster project")}`,
     };
   }, []);
-
-  const openShare = (targetUrl: string) => {
-    window.open(targetUrl, "_blank", "noopener,noreferrer");
-  };
+  const shareMenuItems = useMemo(
+    () => [
+      { id: "facebook", label: "Facebook", href: shareTargets.facebook, Icon: IconFacebook },
+      { id: "x", label: "X", href: shareTargets.x, Icon: IconX },
+      { id: "telegram", label: "Telegram", href: shareTargets.telegram, Icon: IconTelegram },
+      { id: "whatsapp", label: "WhatsApp", href: shareTargets.whatsapp, Icon: IconWhatsApp },
+      { id: "pinterest", label: "Pinterest", href: shareTargets.pinterest, Icon: IconPinterest },
+    ],
+    [shareTargets],
+  );
 
   const handleCreate = async () => {
     setBusy(true);
@@ -190,6 +197,14 @@ export function ShareLinkDialog({ open, projectId, onClose }: ShareLinkDialogPro
         aria-labelledby="share-dialog-title"
         className="w-full max-w-lg rounded-2xl border border-slate-200 bg-white p-5 shadow-xl"
       >
+        <button
+          type="button"
+          aria-label="Close share dialog"
+          onClick={onClose}
+          className="absolute right-4 top-4 rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+        >
+          Esc
+        </button>
         <h2 id="share-dialog-title" className="text-lg font-semibold text-slate-900">
           Share project
         </h2>
@@ -262,48 +277,44 @@ export function ShareLinkDialog({ open, projectId, onClose }: ShareLinkDialogPro
                   Copy
                 </button>
 
-                <div className="flex items-center gap-1">
+                <div className="relative">
                   <button
                     type="button"
-                    className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-700 hover:bg-slate-100"
-                    aria-label="Share to Facebook"
-                    onClick={() => openShare(shareTargets.facebook(sharePath(link.token)))}
+                    className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100"
+                    aria-label="Share link"
+                    onClick={() => setShareMenuToken((prev) => (prev === link.token ? null : link.token))}
                   >
-                    <IconFacebook className="h-4 w-4" />
+                    <Share2 size={14} aria-hidden />
+                    Share
                   </button>
-                  <button
-                    type="button"
-                    className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-700 hover:bg-slate-100"
-                    aria-label="Share to X"
-                    onClick={() => openShare(shareTargets.x(sharePath(link.token)))}
-                  >
-                    <IconX className="h-4 w-4" />
-                  </button>
-                  <button
-                    type="button"
-                    className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-700 hover:bg-slate-100"
-                    aria-label="Share to Telegram"
-                    onClick={() => openShare(shareTargets.telegram(sharePath(link.token)))}
-                  >
-                    <IconTelegram className="h-4 w-4" />
-                  </button>
-                  <button
-                    type="button"
-                    className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-700 hover:bg-slate-100"
-                    aria-label="Share to WhatsApp"
-                    onClick={() => openShare(shareTargets.whatsapp(sharePath(link.token)))}
-                  >
-                    <IconWhatsApp className="h-4 w-4" />
-                  </button>
-                  <button
-                    type="button"
-                    className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-700 hover:bg-slate-100"
-                    aria-label="Share to Pinterest"
-                    onClick={() => openShare(shareTargets.pinterest(sharePath(link.token)))}
-                  >
-                    <IconPinterest className="h-4 w-4" />
-                  </button>
+
+                  {shareMenuToken === link.token ? (
+                    <div
+                      className="absolute right-0 top-9 z-10 w-48 rounded-xl border border-slate-200 bg-white p-1 shadow-lg"
+                      role="menu"
+                    >
+                      {shareMenuItems.map((item) => {
+                        const url = sharePath(link.token);
+                        const href = item.href(url);
+                        return (
+                          <a
+                            key={item.id}
+                            role="menuitem"
+                            href={href}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex items-center gap-2 rounded-lg px-2 py-2 text-sm text-slate-700 hover:bg-slate-50"
+                            onClick={() => setShareMenuToken(null)}
+                          >
+                            <item.Icon className="h-4 w-4" />
+                            <span>{item.label}</span>
+                          </a>
+                        );
+                      })}
+                    </div>
+                  ) : null}
                 </div>
+
                 <button
                   type="button"
                   className="text-rose-600 hover:text-rose-700"
