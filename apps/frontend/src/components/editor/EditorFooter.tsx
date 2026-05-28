@@ -4,6 +4,7 @@ import { useMutation } from "@apollo/client/react";
 import { useNavigate } from "react-router-dom";
 import { Download, FileJson, Image as ImageIcon, Save, Share2 } from "lucide-react";
 
+import { CREATE_SHARE_LINK_MUTATION } from "@/graphql/projects.graphql";
 import {
   CREATE_USER_TEMPLATE_MUTATION,
   USER_TEMPLATES_QUERY,
@@ -12,11 +13,11 @@ import { serializeSceneToJson, type ProjectExportFormat } from "@/shared/lib/can
 import { useOptionalEditorWorkspace } from "./editor-workspace-context";
 import { useToastStore } from "@/shared/stores/toast.store";
 import { BlockingOverlay } from "@/components/ui/BlockingOverlay";
-import { ShareLinkDialog } from "@/components/editor/ShareLinkDialog";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { PromptDialog } from "@/components/ui/PromptDialog";
 import { focusRingOnDarkClass } from "@/shared/lib/a11y";
 import { formatDateTime } from "@/shared/lib/format-datetime";
+import { copyTextToClipboard } from "@/shared/lib/copy-to-clipboard";
 
 const footerBtnClass = `flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-violet-100 transition-colors hover:bg-white/10 disabled:opacity-50 ${focusRingOnDarkClass}`;
 
@@ -36,12 +37,13 @@ export const EditorFooter: FC = () => {
   const [busy, setBusy] = useState<string | null>(null);
   const [templatePromptOpen, setTemplatePromptOpen] = useState(false);
   const [openTemplatesConfirm, setOpenTemplatesConfirm] = useState(false);
-  const [shareDialogOpen, setShareDialogOpen] = useState(false);
+  const [shareMenuOpen, setShareMenuOpen] = useState(false);
   const pushToast = useToastStore((state) => state.pushToast);
 
   const [createUserTemplate] = useMutation(CREATE_USER_TEMPLATE_MUTATION, {
     refetchQueries: [{ query: USER_TEMPLATES_QUERY }],
   });
+  const [createShareLink] = useMutation(CREATE_SHARE_LINK_MUTATION);
 
   if (!workspace) {
     return (
@@ -107,7 +109,37 @@ export const EditorFooter: FC = () => {
 
   const handleShare = () => {
     if (!pid) return;
-    setShareDialogOpen(true);
+    setShareMenuOpen((prev) => !prev);
+  };
+
+  const handleCopyShareLink = async () => {
+    if (!pid) return;
+    setBusy("share");
+    try {
+      const res = await createShareLink({
+        variables: { projectId: pid, expiresInHours: 72, role: "VIEWER" },
+      });
+      const payload = (res.data as { createShareLink?: { url?: string } } | undefined)?.createShareLink;
+      if (!payload?.url) {
+        throw new Error("No share URL returned");
+      }
+      const shareUrl = payload.url.startsWith("http") ? payload.url : `${window.location.origin}${payload.url}`;
+      const copied = await copyTextToClipboard(shareUrl);
+      pushToast({
+        title: copied ? "Link copied" : "Share link created",
+        message: copied ? "Anyone with the link can view this project." : shareUrl,
+        tone: "success",
+      });
+      setShareMenuOpen(false);
+    } catch (e) {
+      pushToast({
+        title: "Share failed",
+        message: e instanceof Error ? e.message : "Could not create link",
+        tone: "error",
+      });
+    } finally {
+      setBusy(null);
+    }
   };
 
   const handleSaveTemplate = async (title: string) => {
@@ -221,13 +253,32 @@ export const EditorFooter: FC = () => {
             disabled={!pid || Boolean(busy)}
             onClick={() => void handleShare()}
             className={footerBtnClass}
-            aria-label="Create and copy share link"
+            aria-label="Share project"
           >
             <Share2 size={16} aria-hidden />
             Share
           </button>
         </div>
       </div>
+
+      {shareMenuOpen ? (
+        <div className="fixed inset-0 z-50" onMouseDown={() => setShareMenuOpen(false)}>
+          <div
+            className="absolute bottom-16 right-6 w-56 rounded-xl border border-violet-200/20 bg-violet-950/95 p-2 shadow-xl"
+            onMouseDown={(e) => e.stopPropagation()}
+            role="menu"
+          >
+            <button
+              type="button"
+              className="w-full rounded-lg px-3 py-2 text-left text-sm font-semibold text-violet-100 hover:bg-white/10"
+              onClick={() => void handleCopyShareLink()}
+              role="menuitem"
+            >
+              Copy link
+            </button>
+          </div>
+        </div>
+      ) : null}
 
       <PromptDialog
         open={templatePromptOpen}
@@ -257,9 +308,6 @@ export const EditorFooter: FC = () => {
         }}
       />
 
-      {pid ? (
-        <ShareLinkDialog open={shareDialogOpen} projectId={pid} onClose={() => setShareDialogOpen(false)} />
-      ) : null}
     </footer>
   );
 };
