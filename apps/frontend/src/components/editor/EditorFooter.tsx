@@ -38,6 +38,7 @@ export const EditorFooter: FC = () => {
   const [templatePromptOpen, setTemplatePromptOpen] = useState(false);
   const [openTemplatesConfirm, setOpenTemplatesConfirm] = useState(false);
   const [shareMenuOpen, setShareMenuOpen] = useState(false);
+  const [shareRolePromptOpen, setShareRolePromptOpen] = useState(false);
   const pushToast = useToastStore((state) => state.pushToast);
 
   const [createUserTemplate] = useMutation(CREATE_USER_TEMPLATE_MUTATION, {
@@ -130,6 +131,41 @@ export const EditorFooter: FC = () => {
         message: copied ? "Anyone with the link can view this project." : shareUrl,
         tone: "success",
       });
+      setShareMenuOpen(false);
+    } catch (e) {
+      pushToast({
+        title: "Share failed",
+        message: e instanceof Error ? e.message : "Could not create link",
+        tone: "error",
+      });
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const handleCopyShareLinkWithRole = async (role: "VIEWER" | "EDITOR") => {
+    if (!pid) return;
+    setBusy("share");
+    try {
+      const res = await createShareLink({
+        variables: { projectId: pid, expiresInHours: 72, role },
+      });
+      const payload = (res.data as { createShareLink?: { url?: string } } | undefined)?.createShareLink;
+      if (!payload?.url) {
+        throw new Error("No share URL returned");
+      }
+      const shareUrl = payload.url.startsWith("http") ? payload.url : `${window.location.origin}${payload.url}`;
+      const copied = await copyTextToClipboard(shareUrl);
+      pushToast({
+        title: copied ? "Link copied" : "Share link created",
+        message: copied
+          ? role === "EDITOR"
+            ? "Anyone with the link can edit this project."
+            : "Anyone with the link can view this project."
+          : shareUrl,
+        tone: "success",
+      });
+      setShareRolePromptOpen(false);
       setShareMenuOpen(false);
     } catch (e) {
       pushToast({
@@ -271,10 +307,56 @@ export const EditorFooter: FC = () => {
             <button
               type="button"
               className="w-full rounded-lg px-3 py-2 text-left text-sm font-semibold text-violet-100 hover:bg-white/10"
-              onClick={() => void handleCopyShareLink()}
+              onClick={() => setShareRolePromptOpen(true)}
               role="menuitem"
             >
               Copy link
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      {shareRolePromptOpen ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4"
+          onMouseDown={() => setShareRolePromptOpen(false)}
+        >
+          <div
+            className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-5 shadow-xl"
+            onMouseDown={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-label="Share link access"
+          >
+            <div className="text-lg font-semibold text-slate-900">Share link access</div>
+            <div className="mt-1 text-sm text-slate-600">
+              Choose whether guests can only view or also edit.
+            </div>
+
+            <div className="mt-4 grid gap-2">
+              <button
+                type="button"
+                disabled={busy === "share"}
+                className="w-full rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-900 hover:bg-slate-50 disabled:opacity-50"
+                onClick={() => void handleCopyShareLinkWithRole("VIEWER")}
+              >
+                Viewer link (view only)
+              </button>
+              <button
+                type="button"
+                disabled={busy === "share"}
+                className="w-full rounded-lg bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-violet-700 disabled:opacity-50"
+                onClick={() => void handleCopyShareLinkWithRole("EDITOR")}
+              >
+                Editor link (can edit)
+              </button>
+            </div>
+
+            <button
+              type="button"
+              className="mt-4 w-full rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+              onClick={() => setShareRolePromptOpen(false)}
+            >
+              Cancel
             </button>
           </div>
         </div>
