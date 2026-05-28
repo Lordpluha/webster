@@ -1,5 +1,6 @@
 import { useMutation, useQuery } from "@apollo/client/react";
 import { useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { Eye, Pencil, Share2, Trash2 } from "lucide-react";
 
 import {
@@ -190,12 +191,12 @@ export function ShareLinkDialog({ open, projectId, onClose }: ShareLinkDialogPro
     }
   };
 
-  return (
+  const modal = (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
       <div
         role="dialog"
         aria-labelledby="share-dialog-title"
-        className="w-full max-w-lg rounded-2xl border border-slate-200 bg-white p-5 shadow-xl"
+        className="relative w-full max-w-lg rounded-2xl border border-slate-200 bg-white p-5 shadow-xl"
       >
         <button
           type="button"
@@ -338,4 +339,7 @@ export function ShareLinkDialog({ open, projectId, onClose }: ShareLinkDialogPro
       </div>
     </div>
   );
+
+  // Render in a portal to avoid stacking-context / transformed-parent issues in the editor.
+  return typeof document !== "undefined" ? createPortal(modal, document.body) : modal;
 }
