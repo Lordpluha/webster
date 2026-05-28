@@ -192,7 +192,15 @@ export function ShareLinkDialog({ open, projectId, onClose }: ShareLinkDialogPro
   };
 
   const modal = (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) {
+          setShareMenuToken(null);
+          onClose();
+        }
+      }}
+    >
       <div
         role="dialog"
         aria-labelledby="share-dialog-title"
@@ -341,5 +349,13 @@ export function ShareLinkDialog({ open, projectId, onClose }: ShareLinkDialogPro
   );
 
   // Render in a portal to avoid stacking-context / transformed-parent issues in the editor.
-  return typeof document !== "undefined" ? createPortal(modal, document.body) : modal;
+  if (typeof document === "undefined") {
+    return modal;
+  }
+
+  const target = document.body ?? document.getElementById("root") ?? null;
+  if (!target) {
+    return modal;
+  }
+  return createPortal(modal, target);
 }
